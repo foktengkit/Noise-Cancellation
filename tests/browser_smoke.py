@@ -68,6 +68,20 @@ class ChromePage:
     def click(self, selector):
         self.evaluate("document.querySelector(" + json.dumps(selector) + ").click()")
 
+    def wait_for_app(self, seconds=15):
+        self.wait_for("typeof appReady !== 'undefined'", seconds=seconds)
+        assert self.evaluate("appReady"), "Application configuration did not load"
+        assert self.evaluate("!document.querySelector('#server-status, #reset-button, #recordings-refresh')")
+        assert self.evaluate("document.querySelectorAll('.app-header button').length === 1 && !!document.querySelector('#recordings-button svg')")
+
+    def clear_recordings(self):
+        self.click("#recordings-button")
+        self.wait_for("!historyBusy && !!document.querySelector('.recording-row')")
+        self.click("#recordings-clear")
+        self.click("#recordings-confirm")
+        self.wait_for("!historyBusy && !busy && !document.querySelector('.recording-row') && !document.querySelector('#original-audio').getAttribute('src')")
+        self.click("#recordings-close")
+
     def screenshot(self, path):
         data = self.call("Page.captureScreenshot", {"captureBeyondViewport": True})
         path.write_bytes(base64.b64decode(data["data"]))
@@ -118,7 +132,7 @@ def run(url, executable):
             for name, width, height in [("desktop", 1280, 900), ("mobile", 390, 844)]:
                 page.call("Emulation.setDeviceMetricsOverride", {"width": width, "height": height, "deviceScaleFactor": 1, "mobile": False})
                 page.call("Page.navigate", {"url": url})
-                page.wait_for("document.querySelector('#server-status')?.textContent === '伺服器已連線'")
+                page.wait_for_app()
                 assert page.evaluate("document.title === 'Noise Control | 音訊工作台'")
                 assert page.evaluate("document.querySelector('.brand h1').textContent === 'Noise Control'")
                 assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), name + " overflow"
@@ -160,12 +174,11 @@ def run(url, executable):
                     page.screenshot(artifacts / "mobile-narrow.png")
                     page.call("Emulation.setDeviceMetricsOverride", {"width": width, "height": height, "deviceScaleFactor": 1, "mobile": False})
                 previous_link = page.evaluate("document.querySelector('#original-download').getAttribute('href')")
-                page.click("#reset-button")
-                page.wait_for("!document.querySelector('#original-audio').getAttribute('src') && !document.body.classList.contains('is-busy')")
+                page.clear_recordings()
                 assert page.evaluate("(async () => (await fetch(" + json.dumps(previous_link) + ")).status)()") == 404
-                assert page.evaluate("document.querySelector('#file-input').files.length === 0")
+                assert page.evaluate("document.querySelector('#file-input').files.length === 1")
                 assert page.evaluate("!document.querySelector('#original-audio').getAttribute('src')")
-                assert page.evaluate("document.querySelector('#strength').value === '85'")
+                assert page.evaluate("document.querySelector('#strength').value === '50'")
                 assert page.evaluate("document.querySelector('#hum-filter').value === 'off'")
                 page.evaluate("document.querySelector('#hum-filter').value = '60'")
                 assert page.evaluate("document.querySelector('[data-play=original]').disabled")
@@ -209,9 +222,8 @@ def run(url, executable):
                 page.click("#process-button")
                 page.wait_for("document.querySelector('#status').textContent === '處理完成'")
                 assert not page.errors, page.errors
-                print(json.dumps({"viewport": name, "waveformPixels": pixels, "microphone": "passed", "upload": "passed", "sample": "passed", "transport": "passed", "presets": "passed", "reset": "passed"}))
-            page.click("#reset-button")
-            page.wait_for("!document.body.classList.contains('is-busy') && !document.querySelector('#original-audio').getAttribute('src')")
+                print(json.dumps({"viewport": name, "waveformPixels": pixels, "microphone": "passed", "upload": "passed", "sample": "passed", "transport": "passed", "presets": "passed", "privateDeletion": "passed", "simplifiedHeader": "passed"}))
+            page.clear_recordings()
             page.click("#sample-button")
             page.wait_for("document.querySelector('#status').textContent === '範例已載入'")
             page.evaluate("const longName = 'voice-recording-'.repeat(15) + '.wav'; document.querySelector('#file-label').textContent = longName; document.querySelector('#session-name').textContent = longName;")
@@ -229,8 +241,6 @@ def run(url, executable):
             assert not page.errors, page.errors
             print("Responsive layouts 320-1920px, long filenames, keyboard tabs and slider theme: passed")
             if page.evaluate("settings.separationEnabled"):
-                page.click("#reset-button")
-                page.wait_for("!document.body.classList.contains('is-busy')")
                 page.evaluate("document.querySelector('#file-engine').value='separate';document.querySelector('#file-engine').dispatchEvent(new Event('change'))")
                 assert page.evaluate("document.querySelector('#strength').disabled && document.querySelector('#hum-filter').disabled")
                 assert page.evaluate("document.querySelector('#file-limit').textContent.includes('15 秒')")
@@ -263,7 +273,7 @@ def run(url, executable):
                     page.call("Emulation.setDeviceMetricsOverride", {"width":width,"height":height,"deviceScaleFactor":1,"mobile":False})
                     page.check_layout()
                     page.screenshot(artifacts / ("separation-" + str(width) + ".png"))
-                page.click("#reset-button")
+                page.clear_recordings()
                 page.wait_for("!document.body.classList.contains('is-busy') && document.querySelector('#source-option').hidden")
                 for link in [first_url, second_url]:
                     assert page.evaluate("(async()=> (await fetch(" + json.dumps(link) + ")).status)()") == 404
@@ -272,7 +282,7 @@ def run(url, executable):
             # Only this synthetic VM uses eval; all real UI flows above run under production CSP.
             page.call("Page.setBypassCSP", {"enabled": True})
             page.call("Page.navigate", {"url": url})
-            page.wait_for("document.querySelector('#server-status')?.textContent === '伺服器已連線'")
+            page.wait_for_app()
             result = page.evaluate("""(async () => {
                 const code = await (await fetch('/capture-worklet.js')).text();
                 let Capture;

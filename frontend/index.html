@@ -17,12 +17,8 @@
         <span class="header-label">人聲降噪</span>
       </div>
       <div class="header-actions">
-        <span id="server-status" class="connection-status" role="status" title="伺服器連線狀態">連線中</span>
-        <button id="recordings-button" class="icon-button reset-button" type="button" title="音訊紀錄" aria-label="音訊紀錄" aria-haspopup="dialog" aria-controls="recordings-dialog">
+        <button id="recordings-button" class="icon-button header-tool" type="button" title="音訊紀錄" aria-label="音訊紀錄" aria-haspopup="dialog" aria-controls="recordings-dialog">
           <i data-lucide="history"></i>
-        </button>
-        <button id="reset-button" class="icon-button reset-button" type="button" title="重設並刪除本頁音訊" aria-label="重設並刪除本頁音訊">
-          <i data-lucide="rotate-ccw"></i>
         </button>
       </div>
     </header>
@@ -195,7 +191,6 @@
       </div>
       <div class="recordings-toolbar">
         <p id="recordings-status" role="status">載入中</p>
-        <button id="recordings-refresh" class="icon-button" type="button" title="重新整理紀錄" aria-label="重新整理紀錄"><i data-lucide="refresh-cw"></i></button>
         <button id="recordings-clear" class="text-button danger" type="button"><i data-lucide="trash-2"></i>全部刪除</button>
       </div>
       <div id="recordings-confirmation" class="delete-confirmation" hidden>

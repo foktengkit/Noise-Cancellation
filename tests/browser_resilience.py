@@ -33,7 +33,7 @@ def run(url, executable):
                 page.call("Page.enable")
                 page.call("Emulation.setDeviceMetricsOverride", {"width":1280,"height":900,"deviceScaleFactor":1,"mobile":False})
                 page.call("Page.navigate", {"url":url})
-                page.wait_for("document.querySelector('#server-status')?.classList.contains('online')")
+                page.wait_for_app()
                 page.click("#sample-button")
                 page.wait_for("document.querySelector('#status').textContent === '範例已載入'")
                 page.evaluate("""window.realFetch = window.fetch.bind(window); window.waitingWaves = []; window.waveAborts = 0;
@@ -45,7 +45,7 @@ def run(url, executable):
                         });""")
                 page.click("#process-button")
                 page.wait_for("waitingWaves.length === 2 && !busy && document.querySelector('#status').textContent === '處理完成'")
-                assert page.evaluate("!document.querySelector('#reset-button').disabled && !document.querySelector('#process-button').disabled")
+                assert page.evaluate("!document.querySelector('#recordings-button').disabled && !document.querySelector('#process-button').disabled")
                 page.evaluate("void drawWaveform(originalAudio.getAttribute('src'), 'original-waveform', trackColors.original, 50)")
                 page.wait_for("document.querySelector('#original-track').dataset.waveformState === 'error'")
                 assert page.evaluate("!document.querySelector('[data-retry=original]').hidden && !document.querySelector('[data-play=original]').disabled && !busy")
@@ -70,8 +70,7 @@ def run(url, executable):
                     assert page.evaluate("getComputedStyle(document.querySelector('#original-error')).display !== 'none'")
                 page.screenshot(artifacts / "mobile-visible-media-error.png")
                 page.evaluate("window.fetch = realFetch")
-                page.click("#reset-button")
-                page.wait_for("!busy && !originalAudio.getAttribute('src')")
+                page.clear_recordings()
                 print("404 media is visibly failed on desktop/mobile, never reported complete: passed")
 
                 page.click("#sample-button")
@@ -89,8 +88,8 @@ def run(url, executable):
                 page.evaluate("window.fetch = realFetch")
                 owned = page.evaluate("({id:currentResult.recordingId,url:currentResult.originalUrl})")
                 page.call("Page.navigate", {"url":url})
-                page.wait_for("document.querySelector('#server-status')?.classList.contains('online')")
-                assert page.evaluate("savedRecordings.size === 0")
+                page.wait_for_app()
+                assert page.evaluate("currentResult === null")
                 page.click("#recordings-button")
                 page.wait_for("!historyBusy && document.querySelectorAll('.recording-row').length === 1")
                 assert page.evaluate("document.querySelector('.recording-row').dataset.recordingId === " + json.dumps(owned["id"]))
@@ -154,6 +153,18 @@ def run(url, executable):
                 page.evaluate("window.fetch = realFetch")
                 assert not page.errors, page.errors
                 print("Repeated 401 has a bounded retry and leaves controls usable: passed")
+
+                page.evaluate("""window.fetch = (input, init) => input === '/api/config'
+                    ? Promise.resolve(new Response('{}', {status:503})) : realFetch(input, init);""")
+                assert page.evaluate("loadConfig()") is False
+                assert page.evaluate("document.querySelector('#status').classList.contains('error') && !document.querySelector('#process-button').disabled")
+                assert page.evaluate("!document.querySelector('#server-status, #reset-button, #recordings-refresh')")
+                page.evaluate("window.fetch = realFetch")
+                assert page.evaluate("loadConfig()") is True
+                page.click("#sample-button")
+                page.wait_for("document.querySelector('#status').textContent === '範例已載入'")
+                assert not page.errors, page.errors
+                print("Configuration failure remains actionable without a connection badge; recovery: passed")
         finally:
             browser.terminate()
             try:

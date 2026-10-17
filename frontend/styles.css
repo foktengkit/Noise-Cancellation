@@ -36,13 +36,9 @@ svg { display: block; width: 18px; height: 18px; flex-shrink: 0; stroke-width: 1
 .brand h1 { font-size: 22px; font-weight: 650; line-height: 1.2; white-space: nowrap; }
 .header-label { color: var(--muted); font-size: 13px; border-left: 1px solid var(--line); padding-left: 18px; margin-left: 8px; }
 .header-actions { gap: 18px; flex-shrink: 0; }
-.connection-status { display: inline-flex; align-items: center; gap: 7px; min-width: 86px; color: var(--muted); font-size: 12px; }
-.connection-status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
-.connection-status.online { color: var(--green); }
-.connection-status.offline { color: var(--red); }
 .icon-button { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex-shrink: 0; background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; text-decoration: none; transition: background 150ms, color 150ms; }
 .icon-button:hover:not(:disabled) { background: var(--surface); color: var(--ink); }
-.reset-button { border-color: transparent; }
+.header-tool { border-color: transparent; }
 
 .app-shell { display: grid; grid-template-columns: 282px minmax(0, 1fr); width: min(1248px, 100%); min-height: calc(100vh - 76px); margin: 0 auto; padding: 36px 28px; gap: 36px; }
 .input-panel { display: flex; flex-direction: column; align-self: start; min-width: 0; padding-right: 28px; border-right: 1px solid var(--line); }
@@ -236,7 +232,6 @@ dialog::backdrop { background: #26323966; }
   .brand { gap: 9px; }
   .header-label { display: none; }
   .header-actions { gap: 8px; }
-  .connection-status { gap: 6px; }
   .brand-mark { width: 30px; height: 30px; }
   .brand-mark svg { width: 21px; height: 21px; }
   .app-shell { grid-template-columns: minmax(0, 1fr); gap: 26px; padding: 24px 20px 28px; }
@@ -275,7 +270,6 @@ dialog::backdrop { background: #26323966; }
   .time-ruler > span:nth-child(2), .time-ruler > span:nth-child(4) { visibility: hidden; }
 }
 @media (max-width: 480px) {
-  .connection-status { width: 8px; min-width: 8px; max-width: 8px; overflow: hidden; white-space: nowrap; }
   dialog { padding: 18px; }
   .recording-row { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .recording-actions { justify-content: flex-end; }

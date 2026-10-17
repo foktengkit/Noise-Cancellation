@@ -23,7 +23,6 @@ let sessionPromise = null;
 let sessionPending = false;
 let currentResult = null;
 let historyBusy = false;
-const savedRecordings = new Set();
 const waveformVersions = {};
 const waveformControllers = {};
 const mediaTimers = {};
@@ -119,7 +118,6 @@ function updateControls() {
   const locked = busy || !!micSession;
   document.body.classList.toggle("is-busy", busy);
   $("#sample-button").disabled = locked;
-  $("#reset-button").disabled = locked;
   $("#recordings-button").disabled = locked;
   document.querySelectorAll("[data-retry]").forEach((button) => { button.disabled = locked; });
   const separating = mode === "file" && fileEngine.value === "separate";
@@ -451,8 +449,6 @@ async function deleteRecording(id = null) {
   try {
     const response = await apiFetch("/api/recordings" + (id ? "/" + id : ""), { method: "DELETE" });
     if (!response.ok && response.status !== 404) throw new Error("刪除失敗，請稍後重試。");
-    if (id) savedRecordings.delete(id);
-    else savedRecordings.clear();
     if (separatedResults.some((entry) => entry.recordingId === id)) {
       separatedResults = [];
       $("#source-option").hidden = true;
@@ -469,44 +465,6 @@ async function deleteRecording(id = null) {
     updateControls();
   }
   if (deleted) await loadRecordings();
-}
-
-async function resetWorkspace() {
-  if (busy || micSession) return;
-  busy = true;
-  updateControls();
-  try {
-    for (const id of savedRecordings) {
-      const response = await apiFetch("/api/recordings/" + id, {
-        method: "DELETE", signal: AbortSignal.timeout(10000),
-      });
-      if (!response.ok && response.status !== 404) throw new Error("音訊尚未刪除，請稍後再試。");
-      savedRecordings.delete(id);
-    }
-  } catch (error) {
-    setStatus(error.name === "TimeoutError" ? "刪除逾時，請稍後再試。" : error.message, true);
-    return;
-  } finally {
-    busy = false;
-    updateControls();
-  }
-  selectionVersion += 1;
-  form.reset();
-  clearResult();
-  for (const kind of trackKinds) {
-    const player = $("#" + kind + "-audio");
-    player.muted = false;
-    player.playbackRate = 1;
-  }
-  $("#file-label").textContent = "選擇音訊檔";
-  $("#file-detail").textContent = "WAV · MP3 · M4A";
-  $("#dropzone").classList.remove("has-file", "dragging");
-  $("#session-name").textContent = "未命名音訊";
-  $("#recording-time").value = "00:00";
-  $("#live-latency").textContent = "每次最長 " + settings.maxDurationSeconds / 60 + " 分鐘";
-  setMode("file");
-  updateStrength();
-  updateControls();
 }
 
 async function loadSample() {
@@ -533,7 +491,6 @@ async function loadSample() {
 
 async function displayResult(result) {
   currentResult = result;
-  savedRecordings.add(result.recordingId);
   loadTrack("original", result.originalUrl);
   loadTrack("denoised", result.denoisedUrl);
   $("#metric-duration").textContent = formatTime(result.durationSeconds);
@@ -581,7 +538,6 @@ async function submitAudio(event) {
     if (separating) {
       if (!Array.isArray(result.sources) || result.sources.length !== 2) throw new Error("人聲分離結果不完整。");
       separatedResults = result.sources;
-      separatedResults.forEach((entry) => savedRecordings.add(entry.recordingId));
       $("#source-select").value = "0";
       $("#source-option").hidden = false;
       await displayResult(separatedResults[0]);
@@ -962,10 +918,8 @@ $("#source-select").addEventListener("change", () => {
   const selected = separatedResults[Number($("#source-select").value)];
   if (selected) void displayResult(selected);
 });
-$("#reset-button").addEventListener("click", resetWorkspace);
 $("#recordings-button").addEventListener("click", () => { void openRecordings(); });
 $("#recordings-close").addEventListener("click", () => $("#recordings-dialog").close());
-$("#recordings-refresh").addEventListener("click", () => { void loadRecordings(); });
 $("#recordings-clear").addEventListener("click", () => { $("#recordings-confirmation").hidden = false; });
 $("#recordings-cancel").addEventListener("click", () => { $("#recordings-confirmation").hidden = true; });
 $("#recordings-confirm").addEventListener("click", () => { void deleteRecording(); });
@@ -980,17 +934,14 @@ async function loadConfig() {
     settings = await response.json();
     $("#engine-option").hidden = !settings.separationEnabled;
     updateFileLimit();
-    $("#server-status").textContent = "伺服器已連線";
-    $("#server-status").className = "connection-status online";
-    $("#server-status").title = "伺服器已連線";
+    return true;
   } catch {
-    $("#server-status").textContent = "伺服器未連線";
-    $("#server-status").className = "connection-status offline";
-    $("#server-status").title = "伺服器未連線";
+    if (!busy && !micSession && !currentResult) setStatus("暫時無法連線，請稍後再試。", true);
+    return false;
   }
 }
 if (window.lucide) window.lucide.createIcons();
 clearResult();
 updateStrength();
 updateControls();
-void loadConfig();
+const appReady = loadConfig();

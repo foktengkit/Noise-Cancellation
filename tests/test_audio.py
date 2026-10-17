@@ -171,6 +171,21 @@ class AudioTests(unittest.TestCase):
         self.assertEqual(config["defaultStrength"], 0.85)
         self.assertEqual(self.client.get("/backend/models/voice.rnnn").status_code, 404)
 
+    def test_simplified_frontend_keeps_private_history_without_refresh_or_connection_badge(self):
+        html = self.client.get("/").text
+        script = self.client.get("/app.js").text
+        styles = self.client.get("/styles.css").text
+        for removed in ("server-status", "reset-button", "recordings-refresh", "connection-status"):
+            with self.subTest(removed=removed):
+                self.assertNotIn(removed, html)
+                self.assertNotIn(removed, script)
+                self.assertNotIn(removed, styles)
+        self.assertIn('id="recordings-button"', html)
+        self.assertIn('id="recordings-confirm"', html)
+        self.assertIn('fetch("/api/config"', script)
+        self.assertIn("await ensureSession();", script)
+        self.assertIn("await loadRecordings();", script)
+
 
 if __name__ == "__main__":
     unittest.main()
