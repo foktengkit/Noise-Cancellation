@@ -167,7 +167,9 @@ class DeploymentTests(unittest.TestCase):
     def test_release_contains_ci_but_not_private_state(self):
         local_reports = ("PRIVACY_REVIEW.md", "SECURITY_FIXES.md", "SECURITY_REVIEW.md",
                          "AUDIT_FIXES_2026-10-17.md", "PROJECT_REVIEW_2026-10-17.md",
-                         "SECURITY_REVIEW_2099-01-01.md", "PRIVACY_REVIEW_2099-01-01.md")
+                         "SECURITY_REVIEW_2099-01-01.md", "PRIVACY_REVIEW_2099-01-01.md",
+                         "DENOISING_QUALITY.md", "QUALITY_IMPROVEMENTS_2026-10-17.md",
+                         "DENOISING_QUALITY_2099-01-01.md", "QUALITY_IMPROVEMENTS_2099-01-01.md")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for name in (*release.FILES, *local_reports, ".github/workflows/tests.yml", "media/private.sqlite3", "media/private.wav", ".env"):
@@ -189,7 +191,8 @@ class DeploymentTests(unittest.TestCase):
     def test_internal_review_reports_are_ignored_by_git_and_docker(self):
         for filename in (".gitignore", ".dockerignore"):
             patterns = (ROOT / filename).read_text(encoding="utf-8").splitlines()
-            for prefix in ("PRIVACY_REVIEW", "SECURITY_FIXES", "SECURITY_REVIEW", "AUDIT_FIXES", "PROJECT_REVIEW"):
+            for prefix in ("PRIVACY_REVIEW", "SECURITY_FIXES", "SECURITY_REVIEW", "AUDIT_FIXES",
+                           "PROJECT_REVIEW", "DENOISING_QUALITY", "QUALITY_IMPROVEMENTS"):
                 with self.subTest(filename=filename, prefix=prefix):
                     self.assertIn("/" + prefix + "*.md", patterns)
 

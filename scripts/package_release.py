@@ -10,10 +10,10 @@ PATTERNS = ("backend/*.py", "frontend/*.html", "frontend/*.css", "frontend/*.js"
             "backend/models/*.rnnn", "backend/models/*.md", "scripts/*.ps1", "frontend/assets/*.md",
             ".github/workflows/*.yml", "separation_service/*.py", "separation_service/*.txt",
             "separation_service/*.lock")
-FILES = ("README.md", "DENOISING_QUALITY.md",
+FILES = ("README.md",
          "requirements.txt", "requirements.lock", "requirements-dev.txt", "render.yaml",
          "runtime.txt", ".python-version", ".gitignore", ".gitattributes", "Procfile", "start_local.cmd",
-         "SEPARATION_DEPLOYMENT.md", "QUALITY_IMPROVEMENTS_2026-10-17.md", "render-separation.yaml",
+         "SEPARATION_DEPLOYMENT.md", "render-separation.yaml",
          ".dockerignore", "separation_service/Dockerfile",
          "start_separation_local.cmd",
          "frontend/vendor/README.md", "frontend/vendor/LUCIDE-LICENSE")
