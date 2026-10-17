@@ -13,7 +13,7 @@ PATTERNS = ("backend/*.py", "frontend/*.html", "frontend/*.css", "frontend/*.js"
 FILES = ("README.md", "SECURITY_REVIEW.md", "PRIVACY_REVIEW.md", "SECURITY_FIXES.md", "DENOISING_QUALITY.md",
          "AUDIT_FIXES_2026-10-17.md", "PROJECT_REVIEW_2026-10-17.md",
          "requirements.txt", "requirements.lock", "requirements-dev.txt", "render.yaml",
-         "runtime.txt", ".python-version", ".gitignore", "Procfile", "start_local.cmd",
+         "runtime.txt", ".python-version", ".gitignore", ".gitattributes", "Procfile", "start_local.cmd",
          "SEPARATION_DEPLOYMENT.md", "QUALITY_IMPROVEMENTS_2026-10-17.md", "render-separation.yaml",
          ".dockerignore", "separation_service/Dockerfile",
          "start_separation_local.cmd",

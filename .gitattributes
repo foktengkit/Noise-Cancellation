@@ -1,0 +1,2 @@
+# Preserve checksum-pinned model bytes on every platform.
+backend/models/*.rnnn -text

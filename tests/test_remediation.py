@@ -176,6 +176,7 @@ class DeploymentTests(unittest.TestCase):
             with ZipFile(root / "dist/Noise-Cancellation.zip") as archive:
                 names = archive.namelist()
                 self.assertIn(".github/workflows/tests.yml", names)
+                self.assertIn(".gitattributes", names)
                 self.assertNotIn(".env", names)
                 self.assertFalse(any(name.startswith("media/") for name in names))
 
