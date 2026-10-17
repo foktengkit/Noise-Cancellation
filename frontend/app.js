@@ -4,6 +4,7 @@ const fileInput = $("#file-input");
 const strength = $("#strength");
 const humFilter = $("#hum-filter");
 const fileEngine = $("#file-engine");
+const sampleSelect = $("#sample-select");
 let separatedResults = [];
 const statusText = $("#status");
 const recordButton = $("#record-button");
@@ -118,6 +119,13 @@ function updateControls() {
   const locked = busy || !!micSession;
   document.body.classList.toggle("is-busy", busy);
   $("#sample-button").disabled = locked;
+  sampleSelect.disabled = locked;
+  for (const option of sampleSelect.options) {
+    option.hidden = option.disabled = option.dataset.engine !== fileEngine.value;
+  }
+  if (!sampleSelect.selectedOptions.length || sampleSelect.selectedOptions[0].disabled) {
+    sampleSelect.value = [...sampleSelect.options].find((option) => !option.disabled).value;
+  }
   $("#recordings-button").disabled = locked;
   document.querySelectorAll("[data-retry]").forEach((button) => { button.disabled = locked; });
   const separating = mode === "file" && fileEngine.value === "separate";
@@ -473,11 +481,12 @@ async function loadSample() {
   updateControls();
   setStatus("正在載入範例…");
   try {
-    const separating = fileEngine.value === "separate";
-    const response = await fetch(separating ? "/assets/sample-speakers.wav" : "/assets/sample-noisy.wav", { signal: AbortSignal.timeout(15000) });
+    const sample = sampleSelect.selectedOptions[0];
+    if (!sample || sample.disabled) throw new Error("請選擇可用的範例。");
+    const response = await fetch(sample.dataset.url, { signal: AbortSignal.timeout(15000) });
     if (!response.ok) throw new Error("範例音訊無法載入，請稍後重試。");
     const transfer = new DataTransfer();
-    transfer.items.add(new File([await response.blob()], separating ? "合成雙人聲範例.wav" : "合成人聲範例.wav", { type: "audio/wav" }));
+    transfer.items.add(new File([await response.blob()], sample.dataset.filename, { type: "audio/wav" }));
     fileInput.files = transfer.files;
     await showFileName();
     setStatus("範例已載入");

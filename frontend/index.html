@@ -43,9 +43,21 @@
             <span id="file-detail" class="format-label">WAV · MP3 · M4A</span>
             <small id="file-limit">25 MB · 最長 2 分鐘</small>
           </label>
-          <button id="sample-button" class="sample-button" type="button" title="載入合成音訊範例">
-            <i data-lucide="headphones"></i><span>載入範例</span><i class="sample-arrow" data-lucide="arrow-up-right"></i>
-          </button>
+          <div class="sample-picker">
+            <label for="sample-select">範例音訊</label>
+            <select id="sample-select" aria-label="範例音訊">
+              <option value="fan" data-engine="rnnoise" data-url="/assets/sample-noisy.wav" data-filename="合成人聲範例.wav">風扇與白噪音</option>
+              <option value="hum" data-engine="rnnoise" data-url="/assets/sample-hum.wav" data-filename="低頻嗡聲範例.wav">60 Hz 低頻嗡聲</option>
+              <option value="wind" data-engine="rnnoise" data-url="/assets/sample-wind.wav" data-filename="模擬風聲範例.wav">模擬風聲</option>
+              <option value="keyboard" data-engine="rnnoise" data-url="/assets/sample-keyboard.wav" data-filename="模擬鍵盤聲範例.wav">模擬鍵盤敲擊</option>
+              <option value="strong" data-engine="rnnoise" data-url="/assets/sample-strong.wav" data-filename="強噪音範例.wav">強噪音</option>
+              <option value="clean" data-engine="rnnoise" data-url="/assets/sample-clean.wav" data-filename="乾淨人聲範例.wav">乾淨人聲</option>
+              <option value="speakers" data-engine="separate" data-url="/assets/sample-speakers.wav" data-filename="合成雙人聲範例.wav" disabled hidden>雙人聲重疊</option>
+            </select>
+            <button id="sample-button" class="icon-button sample-button" type="button" title="載入選擇的範例" aria-label="載入選擇的範例">
+              <i data-lucide="folder-open"></i>
+            </button>
+          </div>
           <div class="processing-option engine-option" id="engine-option" hidden>
             <label for="file-engine">處理模式</label>
             <select id="file-engine" aria-label="處理模式">

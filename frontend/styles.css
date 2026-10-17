@@ -60,9 +60,10 @@ svg { display: block; width: 18px; height: 18px; flex-shrink: 0; stroke-width: 1
 .dropzone strong { max-width: 100%; font-size: 14px; font-weight: 550; overflow-wrap: anywhere; }
 .format-label { color: var(--muted); font-size: 12px; }
 .dropzone small { color: var(--muted); font-size: 12px; }
-.sample-button { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; min-height: 40px; padding: 9px 2px; margin-top: 4px; border: 0; background: transparent; color: var(--muted); font-size: 12px; }
-.sample-button svg { width: 14px; height: 14px; }
-.sample-button .sample-arrow { width: 12px; height: 12px; }
+.sample-picker { display: grid; grid-template-columns: minmax(0, 1fr) 36px; align-items: center; gap: 6px 8px; margin-top: 12px; }
+.sample-picker label { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+.sample-picker select { width: 100%; min-width: 0; height: 36px; border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; background: var(--paper); color: var(--ink); font-size: 12px; }
+.sample-button { color: var(--muted); }
 .sample-button:hover:not(:disabled) { color: var(--green); }
 
 .strength-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border-top: 1px solid var(--line); padding-top: 22px; margin-top: 20px; }
@@ -241,7 +242,6 @@ dialog::backdrop { background: #26323966; }
   .dropzone { display: grid; grid-template-columns: 40px minmax(0, 1fr); justify-content: start; align-content: center; column-gap: 14px; row-gap: 3px; min-height: 112px; padding: 16px; text-align: left; }
   .upload-symbol { grid-column: 1; grid-row: 1 / 4; align-self: center; margin: 0; }
   .dropzone strong, .dropzone .format-label, .dropzone small { grid-column: 2; }
-  .sample-button { min-height: 34px; margin-top: 2px; padding: 6px; }
   .strength-controls { margin-top: 10px; padding-top: 16px; }
   .strength-controls > input { margin: 7px 0; }
   .strength-presets { margin-top: 0; }
