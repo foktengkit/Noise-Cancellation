@@ -1,0 +1,10 @@
+.git
+.venv*
+.tools
+media
+test-artifacts
+dist
+.env
+*.log
+**/__pycache__
+**/*.pyc

@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+.venv-secure/
+.venv-separation/
+.tools/
+venv/
+.env
+.env.*
+!.env.example
+media/
+*.log
+.DS_Store
+dist/
+test-artifacts/

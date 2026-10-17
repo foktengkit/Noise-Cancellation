@@ -1,0 +1,14 @@
+# Optional paid service. Review the compute plan before creating it.
+services:
+  - type: web
+    name: noise-control-separation
+    runtime: docker
+    dockerfilePath: ./separation_service/Dockerfile
+    dockerContext: .
+    plan: 2c-4g
+    healthCheckPath: /health
+    envVars:
+      - key: SEPARATION_API_KEY
+        generateValue: true
+      - key: COOKIE_SECURE
+        value: "1"

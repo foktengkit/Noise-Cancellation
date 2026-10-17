@@ -1,0 +1,7 @@
+fastapi==0.143.3
+starlette==1.8.0
+uvicorn[standard]==0.54.0
+numpy==2.5.4
+python-multipart==0.0.32
+anyio==4.15.1
+av==19.0.1

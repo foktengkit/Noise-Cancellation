@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#ffffff" />
+    <title>Noise Control | 音訊工作台</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script defer src="/vendor/lucide-1.58.0.min.js"></script>
+    <script defer src="/app.js"></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"><i data-lucide="audio-lines"></i></span>
+        <h1>Noise Control</h1>
+        <span class="header-label">人聲降噪</span>
+      </div>
+      <div class="header-actions">
+        <span id="server-status" class="connection-status" role="status" title="伺服器連線狀態">連線中</span>
+        <button id="recordings-button" class="icon-button reset-button" type="button" title="音訊紀錄" aria-label="音訊紀錄" aria-haspopup="dialog" aria-controls="recordings-dialog">
+          <i data-lucide="history"></i>
+        </button>
+        <button id="reset-button" class="icon-button reset-button" type="button" title="重設並刪除本頁音訊" aria-label="重設並刪除本頁音訊">
+          <i data-lucide="rotate-ccw"></i>
+        </button>
+      </div>
+    </header>
+
+    <main class="app-shell">
+      <form id="upload-form" class="input-panel">
+        <div class="panel-heading"><h2>音訊來源</h2></div>
+        <div class="mode-tabs" role="tablist" aria-label="音訊來源">
+          <button id="file-tab" type="button" role="tab" aria-selected="true" aria-controls="file-panel">
+            <i data-lucide="file-audio"></i>錄音檔
+          </button>
+          <button id="mic-tab" type="button" role="tab" aria-selected="false" aria-controls="mic-panel" tabindex="-1">
+            <i data-lucide="mic"></i>麥克風
+          </button>
+        </div>
+
+        <section id="file-panel" class="source-panel" role="tabpanel" aria-labelledby="file-tab">
+          <label class="dropzone" id="dropzone">
+            <input id="file-input" name="file" type="file" accept=".wav,.mp3,.m4a,audio/wav,audio/x-wav,audio/mpeg,audio/mp4,audio/x-m4a" />
+            <span class="upload-symbol"><i data-lucide="upload" aria-hidden="true"></i></span>
+            <strong id="file-label">選擇音訊檔</strong>
+            <span id="file-detail" class="format-label">WAV · MP3 · M4A</span>
+            <small id="file-limit">25 MB · 最長 2 分鐘</small>
+          </label>
+          <button id="sample-button" class="sample-button" type="button" title="載入合成音訊範例">
+            <i data-lucide="headphones"></i><span>載入範例</span><i class="sample-arrow" data-lucide="arrow-up-right"></i>
+          </button>
+          <div class="processing-option engine-option" id="engine-option" hidden>
+            <label for="file-engine">處理模式</label>
+            <select id="file-engine" aria-label="處理模式">
+              <option value="rnnoise">人聲降噪</option>
+              <option value="separate">雙人聲分離</option>
+            </select>
+          </div>
+        </section>
+
+        <section id="mic-panel" class="source-panel" role="tabpanel" aria-labelledby="mic-tab" hidden>
+          <div class="recording-readout">
+            <span class="recording-caption"><span id="recording-indicator" class="recording-indicator" aria-hidden="true"></span>錄音時間</span>
+            <output id="recording-time">00:00</output>
+            <span id="live-latency">每次最長 2 分鐘</span>
+          </div>
+          <button id="record-button" class="primary-button record-button" type="button">
+            <span class="record-idle"><i data-lucide="mic"></i></span><span class="record-active"><i data-lucide="square"></i></span><span id="record-label">開始收音</span>
+          </button>
+          <label class="toggle-row">
+            <span class="toggle-label"><i data-lucide="headphones" aria-hidden="true"></i>耳機監聽</span>
+            <span class="switch"><input id="monitor-toggle" type="checkbox" role="switch" /><span class="switch-track" aria-hidden="true"></span></span>
+          </label>
+          <fieldset class="monitor-modes" id="monitor-modes" disabled>
+            <legend class="sr-only">監聽版本</legend>
+            <label><input type="radio" name="monitor-mode" value="original" /><span>原始</span></label>
+            <label><input type="radio" name="monitor-mode" value="denoised" checked /><span>降噪後</span></label>
+          </fieldset>
+        </section>
+
+        <section class="strength-controls" aria-label="降噪設定">
+          <div class="panel-heading"><h2>降噪強度</h2></div>
+          <div class="control-row">
+            <label for="strength">降噪強度 <span id="strength-mode" class="setting-mode">均衡</span></label>
+            <output id="strength-value" for="strength">85<span>%</span></output>
+          </div>
+          <input id="strength" name="strength" type="range" min="0" max="100" value="85" aria-label="降噪強度" />
+          <div class="strength-presets" role="group" aria-label="降噪強度預設">
+            <button type="button" data-strength="50" aria-pressed="false">輕度</button>
+            <button type="button" data-strength="85" aria-pressed="true">均衡</button>
+            <button type="button" data-strength="100" aria-pressed="false">強力</button>
+          </div>
+          <div class="processing-option">
+            <label for="hum-filter">低頻嗡聲抑制</label>
+            <select id="hum-filter" name="humFilter" aria-label="低頻嗡聲抑制">
+              <option value="off">關閉</option>
+              <option value="50">50 Hz</option>
+              <option value="60">60 Hz</option>
+            </select>
+          </div>
+        </section>
+
+        <button class="primary-button process-button" id="process-button" type="submit">
+          <span class="process-idle"><i data-lucide="wand-sparkles"></i></span>
+          <span class="process-busy"><i data-lucide="loader-circle"></i></span>
+          <span id="process-label">開始降噪</span>
+        </button>
+
+        <div class="panel-status"><p class="status" id="status" role="status">等待音訊</p></div>
+      </form>
+
+      <section class="editor" aria-label="音訊比較工作區">
+        <div class="processing-option source-option" id="source-option" hidden>
+          <label for="source-select">保留人聲</label>
+          <select id="source-select" aria-label="保留人聲">
+            <option value="0">人聲 1</option>
+            <option value="1">人聲 2</option>
+          </select>
+        </div>
+        <div class="editor-heading">
+          <div><h2>音訊比較</h2><p id="session-name" class="session-name">未命名音訊</p></div>
+          <span id="editor-state" class="editor-state"><span aria-hidden="true"></span><span id="editor-state-label">等待音訊</span></span>
+        </div>
+
+        <div class="audio-metrics" aria-label="音訊資訊">
+          <div><span class="metric-label">音訊長度</span><output id="metric-duration">--:--</output></div>
+          <div><span class="metric-label">取樣率</span><output id="metric-rate">-- <small>Hz</small></output></div>
+          <div><span class="metric-label">輸出格式</span><output>WAV <small>16 bit</small></output></div>
+        </div>
+
+        <section class="results" aria-label="比較結果">
+          <article class="audio-track original-track" id="original-track">
+            <div class="track-heading">
+              <span class="track-letter" aria-hidden="true">A</span>
+              <div class="track-title"><h3>原始音訊</h3><p id="original-meta">尚未載入</p></div>
+              <span class="track-state" id="original-state">ORIGINAL</span>
+              <button class="icon-button" type="button" data-retry="original" title="重新載入原始音訊" aria-label="重新載入原始音訊" hidden><i data-lucide="refresh-cw"></i></button>
+              <a id="original-download" class="icon-button" title="下載原始 WAV" aria-label="下載原始 WAV" hidden download="original.wav"><i data-lucide="download"></i></a>
+            </div>
+            <p id="original-error" class="track-error" role="status" hidden>音訊載入失敗或已過期。</p>
+            <div class="waveform-stage">
+              <div class="wave-area">
+                <canvas id="original-waveform" width="1000" height="160" role="img" aria-label="原始音訊波形"></canvas>
+                <div class="wave-playhead" id="original-playhead" hidden></div>
+                <span class="wave-empty"><i data-lucide="audio-lines" aria-hidden="true"></i><span id="original-wave-message">等待音訊</span></span>
+              </div>
+            </div>
+            <div class="time-ruler" id="original-ruler" aria-hidden="true"><span>00:00</span><span>--:--</span><span>--:--</span><span>--:--</span><span>--:--</span></div>
+            <div class="track-transport">
+              <button class="play-button" type="button" data-play="original" title="播放原始音訊" aria-label="播放原始音訊" disabled><span class="icon-play"><i data-lucide="play"></i></span><span class="icon-pause"><i data-lucide="pause"></i></span></button>
+              <div class="seek-control"><input type="range" data-seek="original" min="0" max="1000" step="1" value="0" aria-label="原始音訊播放進度" disabled /><div class="playback-time"><span id="original-current">00:00</span><span id="original-duration">00:00</span></div></div>
+              <button class="icon-button mute-button" type="button" data-mute="original" title="靜音原始音訊" aria-label="靜音原始音訊" aria-pressed="false" disabled><span class="icon-volume"><i data-lucide="volume-2"></i></span><span class="icon-muted"><i data-lucide="volume-x"></i></span></button>
+              <select class="speed-select" data-speed="original" aria-label="原始音訊播放速度" title="播放速度" disabled><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select>
+            </div>
+            <audio id="original-audio" preload="metadata" hidden></audio>
+          </article>
+
+          <article class="audio-track denoised-track" id="denoised-track">
+            <div class="track-heading">
+              <span class="track-letter" aria-hidden="true">B</span>
+              <div class="track-title"><h3>降噪後</h3><p id="denoised-meta">尚未處理</p></div>
+              <span class="track-state" id="denoised-state">DENOISED</span>
+              <button class="icon-button" type="button" data-retry="denoised" title="重新載入降噪音訊" aria-label="重新載入降噪音訊" hidden><i data-lucide="refresh-cw"></i></button>
+              <a id="denoised-download" class="icon-button" title="下載降噪 WAV" aria-label="下載降噪 WAV" hidden download="denoised.wav"><i data-lucide="download"></i></a>
+            </div>
+            <p id="denoised-error" class="track-error" role="status" hidden>音訊載入失敗或已過期。</p>
+            <div class="waveform-stage">
+              <div class="wave-area">
+                <canvas id="denoised-waveform" width="1000" height="160" role="img" aria-label="降噪後音訊波形"></canvas>
+                <div class="wave-playhead" id="denoised-playhead" hidden></div>
+                <span class="wave-empty"><i data-lucide="sparkles" aria-hidden="true"></i><span id="denoised-wave-message">等待降噪結果</span></span>
+              </div>
+            </div>
+            <div class="time-ruler" id="denoised-ruler" aria-hidden="true"><span>00:00</span><span>--:--</span><span>--:--</span><span>--:--</span><span>--:--</span></div>
+            <div class="track-transport">
+              <button class="play-button" type="button" data-play="denoised" title="播放降噪音訊" aria-label="播放降噪音訊" disabled><span class="icon-play"><i data-lucide="play"></i></span><span class="icon-pause"><i data-lucide="pause"></i></span></button>
+              <div class="seek-control"><input type="range" data-seek="denoised" min="0" max="1000" step="1" value="0" aria-label="降噪音訊播放進度" disabled /><div class="playback-time"><span id="denoised-current">00:00</span><span id="denoised-duration">00:00</span></div></div>
+              <button class="icon-button mute-button" type="button" data-mute="denoised" title="靜音降噪音訊" aria-label="靜音降噪音訊" aria-pressed="false" disabled><span class="icon-volume"><i data-lucide="volume-2"></i></span><span class="icon-muted"><i data-lucide="volume-x"></i></span></button>
+              <select class="speed-select" data-speed="denoised" aria-label="降噪音訊播放速度" title="播放速度" disabled><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select>
+            </div>
+            <audio id="denoised-audio" preload="metadata" hidden></audio>
+          </article>
+        </section>
+
+        <footer class="editor-footer">
+          <p id="result-expiry" class="result-expiry" hidden></p>
+        </footer>
+      </section>
+    </main>
+    <dialog id="recordings-dialog" aria-labelledby="recordings-title">
+      <div class="recordings-heading">
+        <div><h2 id="recordings-title">音訊紀錄</h2><p id="recordings-usage"></p></div>
+        <button id="recordings-close" class="icon-button" type="button" title="關閉音訊紀錄" aria-label="關閉音訊紀錄"><i data-lucide="x"></i></button>
+      </div>
+      <div class="recordings-toolbar">
+        <p id="recordings-status" role="status">載入中</p>
+        <button id="recordings-refresh" class="icon-button" type="button" title="重新整理紀錄" aria-label="重新整理紀錄"><i data-lucide="refresh-cw"></i></button>
+        <button id="recordings-clear" class="text-button danger" type="button"><i data-lucide="trash-2"></i>全部刪除</button>
+      </div>
+      <div id="recordings-confirmation" class="delete-confirmation" hidden>
+        <span>刪除所有暫存音訊？</span>
+        <button id="recordings-confirm" class="text-button danger" type="button">確認刪除</button>
+        <button id="recordings-cancel" class="text-button" type="button">取消</button>
+      </div>
+      <ul id="recordings-list" class="recordings-list"></ul>
+    </dialog>
+  </body>
+</html>
