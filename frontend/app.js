@@ -537,11 +537,15 @@ async function submitAudio(event) {
   busy = true;
   updateControls();
   clearResult();
-  setStatus("上傳並處理中…");
+  setStatus("上傳並等候處理中…");
   let quotaFull = false;
   try {
     const response = await apiFetch(separating ? "/api/separate" : "/api/denoise", { method: "POST", body: data, signal: AbortSignal.timeout(separating ? 240000 : 180000) });
     quotaFull = response.status === 507;
+    if (response.status === 503 || response.status === 429) {
+      const seconds = Math.min(60, Math.max(1, Number(response.headers.get("Retry-After")) || 3));
+      throw new Error("伺服器忙碌或請求過於頻繁，請 " + seconds + " 秒後重試。");
+    }
     const result = await response.json();
     if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : "音訊處理失敗。");
     if (separating) {

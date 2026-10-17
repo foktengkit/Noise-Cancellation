@@ -75,6 +75,20 @@ def run(url, executable):
 
                 page.click("#sample-button")
                 page.wait_for("document.querySelector('#status').textContent === '範例已載入'")
+                for status in (429, 503):
+                    page.evaluate("""window.posts = 0;
+                        window.fetch = (input, init) => {
+                            if (input === '/api/denoise' && init?.method === 'POST') {
+                                posts++; return Promise.resolve(new Response(STATUS === 503 ? '<html>Busy</html>' : JSON.stringify({detail:'Busy'}),
+                                    {status:STATUS,headers:{'Content-Type':STATUS === 503 ? 'text/html' : 'application/json','Retry-After':'3'}}));
+                            }
+                            return realFetch(input, init);
+                        };""".replace("STATUS", str(status)))
+                    page.click("#process-button")
+                    page.wait_for("!busy && document.querySelector('#status').classList.contains('error')")
+                    assert page.evaluate("posts === 1 && document.querySelector('#status').textContent.includes('3 秒後重試') && !document.querySelector('#process-button').disabled")
+                page.evaluate("window.fetch = realFetch")
+                print("429/503 show retry guidance without repeating POST or locking controls: passed")
                 page.evaluate("""window.posts = 0; window.sessionRefreshes = 0;
                     window.fetch = (input, init) => {
                         if (input === '/api/session') sessionRefreshes++;

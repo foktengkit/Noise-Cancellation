@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 import os
 import re
+import sqlite3
 import tempfile
 import time
 from collections import deque
@@ -19,7 +21,9 @@ from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 from starlette.formparsers import MultiPartException, MultiPartParser
 from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.requests import ClientDisconnect
 
+from .admission import AdmissionRejected, FileAdmission
 from .denoise import (DEFAULT_STRENGTH, HUM_FILTERS, MAX_AUDIO_SECONDS, MAX_SAMPLE_RATE,
                       AudioError, StreamingNoiseReducer, validate_hum_filter, write_wav_bytes)
 from .security import RateLimits, SecurityHeaders, same_origin
@@ -30,6 +34,7 @@ from .worker import process_file
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+APP_VERSION = "0.5.1"
 FRONTEND_DIR = BASE_DIR / "frontend"
 MEDIA_DIR = Path(os.environ.get("MEDIA_DIR", str(BASE_DIR / "media")))
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -38,6 +43,7 @@ UPLOAD_SECONDS = 30
 MEDIA_TTL_SECONDS = 60 * 60
 LIVE_PROGRESS_SECONDS = 10
 LIVE_GRACE_SECONDS = 15
+LIVE_SEND_SECONDS = 5
 MAX_LIVE_CHUNKS = 1024
 IP_RATE_LIMITS = {"session": 120, "upload": 60, "live": 100}
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "0") == "1"
@@ -49,7 +55,10 @@ def cleanup_media() -> None:
 
 async def media_cleanup_loop():
     while True:
-        await run_in_threadpool(cleanup_media)
+        try:
+            await run_in_threadpool(cleanup_media)
+        except (OSError, sqlite3.Error):
+            logging.getLogger("uvicorn.error").warning("Media cleanup failed; retrying on the next interval.")
         await asyncio.sleep(60)
 
 
@@ -63,6 +72,7 @@ async def lifespan(application):
         owner_bytes=int(os.environ.get("MAX_OWNER_MEDIA_BYTES", 64 * 1024 * 1024)),
     )
     application.state.file_slots = asyncio.Semaphore(1)
+    application.state.file_admission = FileAdmission()
     application.state.live_slots = asyncio.Semaphore(2)
     application.state.live_owners = set()
     application.state.rates = RateLimits()
@@ -75,7 +85,7 @@ async def lifespan(application):
             await task
 
 
-app = FastAPI(title="Noise Control", version="0.5.0", lifespan=lifespan,
+app = FastAPI(title="Noise Control", version=APP_VERSION, lifespan=lifespan,
               docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(SecurityHeaders, secure=COOKIE_SECURE)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=os.environ.get(
@@ -87,6 +97,12 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=os.environ.get(
 async def http_error(request, error):
     return JSONResponse({"detail": error.detail}, status_code=error.status_code,
                         headers={**PRIVATE_HEADERS, **(error.headers or {})})
+
+
+@app.exception_handler(AdmissionRejected)
+async def capacity_error(request, error):
+    return JSONResponse({"detail": str(error)}, status_code=error.status,
+                        headers={**PRIVATE_HEADERS, "Retry-After": error.retry_after})
 
 
 def client_ip(connection) -> str:
@@ -132,7 +148,7 @@ async def session(request: Request):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "version": "0.5.0"}
+    return {"status": "ok", "version": APP_VERSION}
 
 
 @app.get("/api/config")
@@ -206,32 +222,48 @@ async def parse_upload(request: Request):
             await form.close()
 
 
+async def processing_thread(function, *args):
+    # Cancelling a request must not free its slot while native work still runs.
+    task = asyncio.create_task(run_in_threadpool(function, *args))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                continue
+            except Exception:
+                break
+        if not task.cancelled():
+            task.exception()
+        raise
+
+
 @app.post("/api/denoise")
 async def denoise_audio(request: Request):
     owner = await require_owner(request)
     check_rate(request, "upload", owner, limit=6)
-    try:
-        await asyncio.wait_for(app.state.file_slots.acquire(), timeout=0.1)
-    except asyncio.TimeoutError:
-        raise HTTPException(503, "The server is busy. Please try again shortly.")
     app.state.store.pin(owner)
     try:
-        payload, filename, content_type, strength, hum_filter = await parse_upload(request)
-        original, denoised, metadata = await run_in_threadpool(
-            process_file, payload, filename, content_type, strength, hum_filter)
-        result = await run_in_threadpool(app.state.store.save, owner, original, denoised, metadata)
-        return JSONResponse(result, headers=PRIVATE_HEADERS)
+        async with app.state.file_admission.hold(owner, app.state.file_slots):
+            payload, filename, content_type, strength, hum_filter = await parse_upload(request)
+            original, denoised, metadata = await processing_thread(
+                process_file, payload, filename, content_type, strength, hum_filter)
+            result = await processing_thread(app.state.store.save, owner, original, denoised, metadata)
+            return JSONResponse(result, headers=PRIVATE_HEADERS)
     except StorageFull as exc:
         raise HTTPException(507, str(exc)) from exc
     except (AudioError, ValueError, TypeError) as exc:
         raise HTTPException(400, str(exc)) from exc
     except TimeoutError as exc:
         raise HTTPException(408, "The audio upload or processing timed out.") from exc
+    except ClientDisconnect as exc:
+        raise HTTPException(408, "The upload connection was interrupted.") from exc
     except OSError as exc:
         raise HTTPException(503, "Audio processing or storage is unavailable.") from exc
     finally:
         app.state.store.unpin(owner)
-        app.state.file_slots.release()
 
 
 @app.post("/api/separate")
@@ -240,32 +272,30 @@ async def separate_recording(request: Request):
     check_rate(request, "separate", owner, limit=2)
     if separation.settings() is None:
         raise HTTPException(503, "Speaker separation is not configured on this server.")
-    try:
-        await asyncio.wait_for(app.state.file_slots.acquire(), timeout=0.1)
-    except asyncio.TimeoutError:
-        raise HTTPException(503, "The server is busy. Please try again shortly.")
     app.state.store.pin(owner)
     try:
-        payload, filename, content_type, _, _ = await parse_upload(request)
-        original, _, metadata = await run_in_threadpool(process_file, payload, filename, content_type, 0, "off", "decode")
-        duration = metadata["inputFrames"] / metadata["sampleRate"]
-        try:
-            sources = await run_in_threadpool(separation.separate_audio, original, duration)
-        except AudioError as error:
-            raise HTTPException(503, "Speaker separation is unavailable. Please try again later.") from error
-        result = await run_in_threadpool(separation.save_sources, app.state.store, owner, original, sources, metadata)
-        return JSONResponse(result, headers=PRIVATE_HEADERS)
+        async with app.state.file_admission.hold(owner, app.state.file_slots, "separate"):
+            payload, filename, content_type, _, _ = await parse_upload(request)
+            original, _, metadata = await processing_thread(process_file, payload, filename, content_type, 0, "off", "decode")
+            duration = metadata["inputFrames"] / metadata["sampleRate"]
+            try:
+                sources = await processing_thread(separation.separate_audio, original, duration)
+            except AudioError as error:
+                raise HTTPException(503, "Speaker separation is unavailable. Please try again later.") from error
+            result = await processing_thread(separation.save_sources, app.state.store, owner, original, sources, metadata)
+            return JSONResponse(result, headers=PRIVATE_HEADERS)
     except StorageFull as error:
         raise HTTPException(507, str(error)) from error
     except (AudioError, ValueError, TypeError) as error:
         raise HTTPException(400, str(error)) from error
     except TimeoutError as error:
         raise HTTPException(408, "The upload or decoding timed out.") from error
+    except ClientDisconnect as error:
+        raise HTTPException(408, "The upload connection was interrupted.") from error
     except OSError as error:
         raise HTTPException(503, "Audio processing or storage is unavailable.") from error
     finally:
         app.state.store.unpin(owner)
-        app.state.file_slots.release()
 
 
 @app.api_route("/media/{filename}", methods=["GET", "HEAD"])
@@ -323,6 +353,13 @@ def save_live(owner, original, cleaned, sample_rate, strength, hum_filter="off")
         "strength": strength, "inputFormat": "microphone", "engine": "rnnoise", "humFilter": hum_filter})
 
 
+async def send_live(websocket, method, payload, deadline):
+    remaining = min(LIVE_SEND_SECONDS, deadline - time.monotonic())
+    if remaining <= 0:
+        raise asyncio.TimeoutError("Microphone connection timed out.")
+    await asyncio.wait_for(getattr(websocket, method)(payload), timeout=remaining)
+
+
 @app.websocket("/api/live")
 async def live_audio(websocket: WebSocket):
     owner = await run_in_threadpool(app.state.store.owner, websocket.cookies.get(SESSION_COOKIE))
@@ -367,8 +404,8 @@ async def live_audio(websocket: WebSocket):
         total_samples = 0
         last_audio = time.monotonic()
         messages = deque()
-        await websocket.send_json({"type": "ready", "maxDurationSeconds": MAX_AUDIO_SECONDS,
-                                   "engine": "rnnoise"})
+        await send_live(websocket, "send_json", {"type": "ready", "maxDurationSeconds": MAX_AUDIO_SECONDS,
+                                               "engine": "rnnoise"}, deadline)
         while True:
             now = time.monotonic()
             remaining = min(deadline - now, last_audio + LIVE_PROGRESS_SECONDS - now)
@@ -394,12 +431,12 @@ async def live_audio(websocket: WebSocket):
                     raise AudioError("Invalid microphone audio samples.")
                 if total_samples + samples.size > sample_rate * MAX_AUDIO_SECONDS:
                     raise AudioError(f"Recording limit: {MAX_AUDIO_SECONDS} seconds.")
-                cleaned = await run_in_threadpool(reducer.process, samples, strength)
+                cleaned = await processing_thread(reducer.process, samples, strength)
                 total_samples += samples.size
                 last_audio = time.monotonic()
                 original_chunks.append(samples)
                 cleaned_chunks.append(cleaned.copy())
-                await websocket.send_bytes(cleaned.astype("<f4").tobytes())
+                await send_live(websocket, "send_bytes", cleaned.astype("<f4").tobytes(), deadline)
             else:
                 control = read_control(message.get("text", ""))
                 if control.get("type") == "strength":
@@ -407,28 +444,30 @@ async def live_audio(websocket: WebSocket):
                 elif control.get("type") == "stop":
                     if not original_chunks:
                         raise AudioError("No microphone audio was received.")
-                    tail = await run_in_threadpool(reducer.finish)
+                    tail = await processing_thread(reducer.finish)
                     if tail.size:
                         cleaned_chunks.append(tail)
-                        await websocket.send_bytes(tail.astype("<f4").tobytes())
-                    result = await run_in_threadpool(
+                        await send_live(websocket, "send_bytes", tail.astype("<f4").tobytes(), deadline)
+                    result = await processing_thread(
                         save_live, owner, np.concatenate(original_chunks),
                         np.concatenate(cleaned_chunks), sample_rate, strength, hum_filter)
-                    await websocket.send_json({"type": "complete", **result})
-                    await websocket.close(code=1000)
+                    await send_live(websocket, "send_json", {"type": "complete", **result}, deadline)
+                    await asyncio.wait_for(websocket.close(code=1000), timeout=LIVE_SEND_SECONDS)
                     return
                 else:
                     raise AudioError("Unknown microphone control message.")
     except WebSocketDisconnect:
         pass
     except (AudioError, StorageFull, ValueError, TypeError, asyncio.TimeoutError) as exc:
-        with suppress(WebSocketDisconnect, RuntimeError, OSError):
-            await websocket.send_json({"type": "error", "detail": str(exc) or "Microphone connection timed out."})
-            await websocket.close(code=1008)
+        with suppress(WebSocketDisconnect, RuntimeError, OSError, asyncio.TimeoutError):
+            async with asyncio.timeout(LIVE_SEND_SECONDS):
+                await websocket.send_json({"type": "error", "detail": str(exc) or "Microphone connection timed out."})
+                await websocket.close(code=1008)
     except OSError:
-        with suppress(WebSocketDisconnect, RuntimeError, OSError):
-            await websocket.send_json({"type": "error", "detail": "Unable to save the recording."})
-            await websocket.close(code=1011)
+        with suppress(WebSocketDisconnect, RuntimeError, OSError, asyncio.TimeoutError):
+            async with asyncio.timeout(LIVE_SEND_SECONDS):
+                await websocket.send_json({"type": "error", "detail": "Unable to save the recording."})
+                await websocket.close(code=1011)
     finally:
         app.state.store.unpin(owner)
         app.state.live_owners.discard(owner)

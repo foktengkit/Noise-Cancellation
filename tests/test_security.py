@@ -196,8 +196,11 @@ class SecurityTests(unittest.TestCase):
 
     def test_busy_admission_happens_before_reading_upload(self):
         with patch.object(server.app.state, "file_slots", asyncio.Semaphore(0)), \
+                patch.object(server.app.state.file_admission, "wait_seconds", 0.01), \
                 patch.object(server, "parse_upload", side_effect=AssertionError("Must not read body")):
-            self.assertEqual(self.owner.post("/api/denoise").status_code, 503)
+            response = self.owner.post("/api/denoise")
+            self.assertEqual(response.status_code, 503)
+            self.assertEqual(response.headers["retry-after"], "3")
 
     def test_upload_rate_cannot_be_reset_by_creating_another_session(self):
         for unused in range(server.IP_RATE_LIMITS["upload"]):
