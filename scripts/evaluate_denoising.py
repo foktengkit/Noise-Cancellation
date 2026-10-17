@@ -22,16 +22,26 @@ def evaluate(path, output):
     audio = read_audio_bytes(path.read_bytes(), path.name)
     rate = audio.sample_rate
     speech = audio.samples.mean(axis=1)
-    speech = speech * (0.7 / max(np.max(np.abs(speech)), 1e-8))
+    if not np.all(np.isfinite(speech)) or not len(speech):
+        raise ValueError("A finite, nonempty clean speech reference is required.")
+    peak = float(np.max(np.abs(speech)))
+    if peak < 1e-6:
+        raise ValueError("The clean reference is silent.")
+    speech = speech * (0.7 / peak)
     speech = np.pad(speech, (rate, rate))
     active = np.convolve((np.abs(speech) > 0.015).astype(np.float32),
                          np.ones(rate // 50, np.float32) / (rate // 50), "same") > 0.05
+    if not np.any(active):
+        raise ValueError("No active speech was found in the reference.")
     rng = np.random.default_rng(420)
     t = np.arange(len(speech)) / rate
     fan = sum(np.sin(2 * np.pi * frequency * t) / (index + 1)
               for index, frequency in enumerate((70, 140, 210)))
     noise = rng.normal(0, 1, len(speech)) + 0.8 * fan
-    noise *= np.sqrt(np.mean(speech[active] ** 2) / (10 ** (5 / 10) * np.mean(noise[active] ** 2)))
+    noise_power = float(np.mean(noise[active] ** 2))
+    if not np.isfinite(noise_power) or noise_power <= 0:
+        raise ValueError("Active noise must have finite, positive energy.")
+    noise *= np.sqrt(np.mean(speech[active] ** 2) / (10 ** (5 / 10) * noise_power))
     noisy = (speech + noise).astype(np.float32)
     if np.max(np.abs(noisy)) >= 1:
         raise ValueError("Fixture clips. Reduce speech/noise levels.")

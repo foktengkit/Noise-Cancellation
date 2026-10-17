@@ -107,6 +107,8 @@ class SpeechDenoiser:
             except (av.error.BlockingIOError, av.error.EOFError):
                 break
             wet = np.ascontiguousarray(frame.to_ndarray().T, dtype=np.float32)
+            if wet.ndim != 2 or wet.shape[1] != self.channels or not np.all(np.isfinite(wet)):
+                raise AudioError("The speech filter returned invalid audio samples.")
             skip = min(self.skip, len(wet))
             wet, self.skip = wet[skip:], self.skip - skip
             position = 0

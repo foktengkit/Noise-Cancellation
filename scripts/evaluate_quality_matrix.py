@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import math
 from pathlib import Path
 import platform
 import time
@@ -77,7 +78,26 @@ def build_noise(kind, reference, rate, seed):
 
 
 def make_mixture(reference, noise, active, snr_db):
-    noise = noise * np.sqrt(power(reference[active]) / (10 ** (snr_db / 10) * power(noise[active])))
+    reference, noise, active = np.asarray(reference), np.asarray(noise), np.asarray(active)
+    if (reference.ndim != 1 or not len(reference) or noise.shape != reference.shape
+            or active.shape != reference.shape or active.dtype != np.bool_
+            or not np.any(active) or not np.all(np.isfinite(reference)) or not np.all(np.isfinite(noise))):
+        raise ValueError("Finite matching speech/noise arrays and a nonempty active mask are required.")
+    with np.errstate(over="ignore", invalid="ignore"):
+        speech_power, noise_power = power(reference[active]), power(noise[active])
+    if not math.isfinite(speech_power) or not math.isfinite(noise_power) or min(speech_power, noise_power) <= 0:
+        raise ValueError("Active speech and noise must have finite, positive energy.")
+    try:
+        snr_ratio = math.pow(10, float(snr_db) / 10)
+    except (OverflowError, ValueError) as error:
+        raise ValueError("SNR must be finite and within the numeric range.") from error
+    denominator = snr_ratio * noise_power
+    if not math.isfinite(denominator) or denominator <= 0:
+        raise ValueError("SNR must be finite and within the numeric range.")
+    gain = speech_power / denominator
+    if not math.isfinite(gain) or gain <= 0:
+        raise ValueError("The requested mixture gain is outside the numeric range.")
+    noise = noise * np.sqrt(gain)
     mixture = reference + noise
     scale = min(1.0, 0.95 / max(float(np.max(np.abs(mixture))), 1e-15))
     return (reference * scale).astype(np.float32), (mixture * scale).astype(np.float32), scale

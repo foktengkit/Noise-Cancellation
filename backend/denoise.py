@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import struct
 import wave
 from dataclasses import dataclass
 from pathlib import Path
@@ -91,6 +92,8 @@ def read_media_bytes(data: bytes, filename: str | None = None, content_type: str
         extension = _extension_from_filename(filename)
         if extension not in {".mp3", ".m4a"}:
             raise AudioError("A WAV, MP3, or M4A filename is required.")
+        if extension == ".m4a":
+            _validate_m4a_boxes(data)
         with av.open(io.BytesIO(data), mode="r", format="mp3" if extension == ".mp3" else "mov",
                      options={"protocol_whitelist": "", "format_whitelist": "mp3,mov",
                               "probesize": "1048576", "analyzeduration": "5000000"}) as container:
@@ -102,12 +105,14 @@ def read_media_bytes(data: bytes, filename: str | None = None, content_type: str
             resampler = None
             chunks: list[np.ndarray] = []
             total_frames = 0
+            largest_frame = 0
 
-            for frame in container.decode(stream):
+            for frame in _decode_frames(container, stream):
                 if sample_rate <= 0:
                     sample_rate = int(frame.sample_rate or 0)
                 if sample_rate <= 0:
                     raise AudioError("The audio file has an invalid sample rate.")
+                largest_frame = max(largest_frame, frame.samples)
 
                 if resampler is None:
                     layout = frame.layout.name if frame.layout else "stereo"
@@ -124,6 +129,12 @@ def read_media_bytes(data: bytes, filename: str | None = None, content_type: str
                     total_frames += resampled.samples
                     _validate_audio_size(total_frames, sample_rate, len(resampled.layout.channels))
                     chunks.append(_float_planar_frame_to_samples(resampled))
+            if extension == ".m4a" and stream.duration is not None and stream.duration > 0 and stream.time_base:
+                expected_frames = round(stream.duration * stream.time_base * sample_rate)
+                # AAC priming/padding and resampling can differ by a codec frame.
+                tolerance = max(1, largest_frame, stream.codec_context.frame_size) * 2
+                if total_frames + tolerance < expected_frames:
+                    raise AudioError("The M4A audio data is incomplete or truncated.")
     except AudioError:
         raise
     except FFmpegError as exc:
@@ -161,8 +172,38 @@ def write_wav_bytes(samples: np.ndarray, sample_rate: int) -> bytes:
 def write_wav_frames(output, samples: np.ndarray) -> None:
     """Quantize in bounded blocks instead of copying a whole recording."""
     for start in range(0, len(samples), 16384):
-        block = np.clip(samples[start:start + 16384], -1.0, 1.0)
+        block = samples[start:start + 16384]
+        if not np.all(np.isfinite(block)):
+            raise AudioError("Audio samples must be finite before encoding.")
+        block = np.clip(block, -1.0, 1.0)
         output.writeframesraw((block * 32767.0).astype("<i2").tobytes())
+
+
+def _validate_m4a_boxes(data: bytes) -> None:
+    """Check outer box bounds; FFmpeg remains responsible for media parsing."""
+    offset = 0
+    while offset < len(data):
+        if len(data) - offset < 8:
+            raise AudioError("The M4A container is incomplete or malformed.")
+        size = struct.unpack_from(">I", data, offset)[0]
+        header_size = 8
+        if size == 1:
+            header_size = 16
+            if len(data) - offset < header_size:
+                raise AudioError("The M4A container is incomplete or malformed.")
+            size = struct.unpack_from(">Q", data, offset + 8)[0]
+        elif size == 0:
+            return
+        if size < header_size or size > len(data) - offset:
+            raise AudioError("The M4A container is incomplete or malformed.")
+        offset += size
+
+
+def _decode_frames(container, stream):
+    for packet in container.demux(stream):
+        if packet.is_corrupt:
+            raise AudioError("The audio file contains corrupt packets.")
+        yield from packet.decode()
 
 
 def reduce_noise(samples: np.ndarray, sample_rate: int, strength: float = DEFAULT_STRENGTH,
