@@ -45,8 +45,8 @@ class SeparationTests(unittest.TestCase):
         self.other.close()
         self.stack.close()
 
-    def upload(self, client=None):
-        return (client or self.owner).post("/api/separate", files={"file": ("test.wav", self.wav)})
+    def upload(self, client=None, content_type="audio/wav"):
+        return (client or self.owner).post("/api/separate", files={"file": ("test.wav", self.wav, content_type)})
 
     def test_outputs_are_owned_and_history_keeps_the_two_sources(self):
         response = self.upload()
@@ -63,6 +63,14 @@ class SeparationTests(unittest.TestCase):
             self.assertEqual(self.other.delete("/api/recordings/" + source["recordingId"]).status_code, 404)
         self.assertEqual(len(self.owner.get("/api/recordings").json()["recordings"]), 2)
         self.assertNotIn(CONFIG["SEPARATION_API_KEY"], self.owner.get("/api/config").text)
+
+    def test_wav_mime_aliases_are_forwarded_to_the_decoder(self):
+        for content_type in ("audio/wav", "audio/x-wav"):
+            with self.subTest(content_type=content_type):
+                self.decode.reset_mock()
+                response = self.upload(content_type=content_type)
+                self.assertEqual(response.status_code, 200, response.text)
+                self.decode.assert_called_once_with(self.wav, "test.wav", content_type, 0, "off", "decode")
 
     def test_same_origin_and_owner_are_required_before_decoding(self):
         with TestClient(server.app) as anonymous:
