@@ -42,4 +42,5 @@ def main(directory, model_directory):
 
 
 if __name__ == "__main__":
+    os.umask(0o077)
     main(*sys.argv[1:])

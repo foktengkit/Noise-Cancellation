@@ -100,6 +100,7 @@ class SeparationTests(unittest.TestCase):
         self.assertNotIn(CONFIG["SEPARATION_API_KEY"], response.text)
         self.assertEqual(list(self.directory.glob("*.wav")), [])
         self.assertEqual(server.app.state.file_slots._value, 1)
+        self.assertFalse(server.app.state.store.active_owners)
 
     def test_client_cannot_select_an_upstream_url(self):
         response = self.owner.post("/api/separate", files={"file": ("x.wav", self.wav)}, data={"url": "http://169.254.169.254"})

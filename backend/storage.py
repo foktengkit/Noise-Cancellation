@@ -7,6 +7,7 @@ import secrets
 import sqlite3
 import threading
 import time
+from collections import Counter
 from contextlib import closing, suppress
 from pathlib import Path
 from uuid import uuid4
@@ -14,6 +15,8 @@ from uuid import uuid4
 
 SESSION_COOKIE = "noise_lift_session"
 SESSION_SECONDS = 8 * 60 * 60
+SESSION_IDLE_SECONDS = 5 * 60
+MAX_SESSIONS = 4096
 PRIVATE_HEADERS = {"Cache-Control": "no-store, private", "Pragma": "no-cache"}
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_-]{43}\Z")
 FILE_PATTERN = re.compile(r"[0-9a-f]{32}\.wav\Z")
@@ -35,10 +38,11 @@ class MediaStore:
         self.max_bytes = max_bytes
         self.owner_bytes = owner_bytes
         self.lock = threading.RLock()
+        self.active_owners = Counter()
         with closing(self.connect()) as db, db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS sessions (
-                    owner TEXT PRIMARY KEY, expires REAL NOT NULL
+                    owner TEXT PRIMARY KEY, expires REAL NOT NULL, last_seen REAL NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS recordings (
                     id TEXT PRIMARY KEY, owner TEXT NOT NULL,
@@ -52,6 +56,10 @@ class MediaStore:
             columns = {row["name"] for row in db.execute("PRAGMA table_info(recordings)")}
             if "metadata" not in columns:
                 db.execute("ALTER TABLE recordings ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'")
+            session_columns = {row["name"] for row in db.execute("PRAGMA table_info(sessions)")}
+            if "last_seen" not in session_columns:
+                db.execute("ALTER TABLE sessions ADD COLUMN last_seen REAL NOT NULL DEFAULT 0")
+                db.execute("UPDATE sessions SET last_seen=MIN(?, expires-?)", (time.time(), SESSION_SECONDS))
 
     def connect(self):
         connection = sqlite3.connect(self.database, timeout=5)
@@ -62,21 +70,39 @@ class MediaStore:
         if not cookie or not TOKEN_PATTERN.fullmatch(cookie):
             return None
         owner = hashlib.sha256(cookie.encode("ascii")).hexdigest()
-        with closing(self.connect()) as db:
-            row = db.execute("SELECT owner FROM sessions WHERE owner=? AND expires>?",
-                             (owner, time.time())).fetchone()
-        return row["owner"] if row else None
+        now = time.time()
+        with self.lock, closing(self.connect()) as db, db:
+            row = db.execute(
+                "SELECT owner, last_seen, EXISTS(SELECT 1 FROM recordings "
+                "WHERE recordings.owner=sessions.owner AND recordings.expires>?) AS has_recording "
+                "FROM sessions WHERE owner=? AND expires>?", (now, owner, now)).fetchone()
+            if row and (row["last_seen"] > now - SESSION_IDLE_SECONDS
+                        or row["has_recording"] or owner in self.active_owners):
+                db.execute("UPDATE sessions SET last_seen=? WHERE owner=?", (now, owner))
+                return row["owner"]
+        return None
+
+    def pin(self, owner: str) -> None:
+        with self.lock:
+            self.active_owners[owner] += 1
+
+    def unpin(self, owner: str) -> None:
+        with self.lock:
+            self.active_owners[owner] -= 1
+            if self.active_owners[owner] <= 0:
+                del self.active_owners[owner]
 
     def new_session(self) -> str:
         with self.lock:
             self.cleanup()
             with closing(self.connect()) as db, db:
-                if db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] >= 4096:
+                if db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] >= MAX_SESSIONS:
                     raise StorageFull("Session capacity reached. Please try again later.")
                 cookie = secrets.token_urlsafe(32)
                 owner = hashlib.sha256(cookie.encode("ascii")).hexdigest()
-                db.execute("INSERT INTO sessions VALUES (?, ?)",
-                           (owner, time.time() + SESSION_SECONDS))
+                now = time.time()
+                db.execute("INSERT INTO sessions (owner, expires, last_seen) VALUES (?, ?, ?)",
+                           (owner, now + SESSION_SECONDS, now))
             return cookie
 
     def save(self, owner: str, original: bytes, denoised: bytes, metadata: dict) -> dict:
@@ -185,6 +211,13 @@ class MediaStore:
                                  (now,)).fetchall()
             db.execute("DELETE FROM recordings WHERE expires<=?", (now,))
             db.execute("DELETE FROM sessions WHERE expires<=?", (now,))
+            unused = db.execute(
+                "SELECT owner FROM sessions WHERE last_seen<=? AND NOT EXISTS "
+                "(SELECT 1 FROM recordings WHERE recordings.owner=sessions.owner AND recordings.expires>?)",
+                (now - SESSION_IDLE_SECONDS, now)).fetchall()
+            for row in unused:
+                if row["owner"] not in self.active_owners:
+                    db.execute("DELETE FROM sessions WHERE owner=?", (row["owner"],))
             for row in expired:
                 for name in row:
                     self.remove_file(db, name)

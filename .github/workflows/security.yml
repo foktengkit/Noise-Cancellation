@@ -1,0 +1,23 @@
+name: Dependency security checks
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '21 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependencies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version-file: .python-version
+      - run: python -m pip install pip-requirements-parser==32.0.1
+      - run: python -m scripts.check_dependencies

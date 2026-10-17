@@ -214,6 +214,7 @@ async def denoise_audio(request: Request):
         await asyncio.wait_for(app.state.file_slots.acquire(), timeout=0.1)
     except asyncio.TimeoutError:
         raise HTTPException(503, "The server is busy. Please try again shortly.")
+    app.state.store.pin(owner)
     try:
         payload, filename, content_type, strength, hum_filter = await parse_upload(request)
         original, denoised, metadata = await run_in_threadpool(
@@ -229,6 +230,7 @@ async def denoise_audio(request: Request):
     except OSError as exc:
         raise HTTPException(503, "Audio processing or storage is unavailable.") from exc
     finally:
+        app.state.store.unpin(owner)
         app.state.file_slots.release()
 
 
@@ -242,6 +244,7 @@ async def separate_recording(request: Request):
         await asyncio.wait_for(app.state.file_slots.acquire(), timeout=0.1)
     except asyncio.TimeoutError:
         raise HTTPException(503, "The server is busy. Please try again shortly.")
+    app.state.store.pin(owner)
     try:
         payload, filename, content_type, _, _ = await parse_upload(request)
         original, _, metadata = await run_in_threadpool(process_file, payload, filename, content_type, 0, "off", "decode")
@@ -261,6 +264,7 @@ async def separate_recording(request: Request):
     except OSError as error:
         raise HTTPException(503, "Audio processing or storage is unavailable.") from error
     finally:
+        app.state.store.unpin(owner)
         app.state.file_slots.release()
 
 
@@ -336,6 +340,7 @@ async def live_audio(websocket: WebSocket):
         await websocket.close(code=1008)
         return
     app.state.live_owners.add(owner)
+    app.state.store.pin(owner)
     acquired = False
     deadline = time.monotonic() + MAX_AUDIO_SECONDS + LIVE_GRACE_SECONDS
     try:
@@ -425,6 +430,7 @@ async def live_audio(websocket: WebSocket):
             await websocket.send_json({"type": "error", "detail": "Unable to save the recording."})
             await websocket.close(code=1011)
     finally:
+        app.state.store.unpin(owner)
         app.state.live_owners.discard(owner)
         if acquired:
             app.state.live_slots.release()

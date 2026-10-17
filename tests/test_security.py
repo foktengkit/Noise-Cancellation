@@ -304,6 +304,7 @@ class SecurityTests(unittest.TestCase):
             response = self.owner.post("/api/denoise", files={"file": ("small.wav", self.wav)})
         self.assertEqual(response.status_code, 408)
         self.assertFalse(list(self.directory.glob("*.wav")))
+        self.assertFalse(server.app.state.store.active_owners)
 
     def test_untrusted_host_is_rejected(self):
         self.assertEqual(self.owner.get("/", headers={"host": "evil.example"}).status_code, 400)
@@ -351,6 +352,7 @@ class SecurityTests(unittest.TestCase):
         with patch.object(server, "UPLOAD_SECONDS", 0.02):
             self.assertEqual(asyncio.run(probe()), 408)
         self.assertEqual(server.app.state.file_slots._value, 1)
+        self.assertFalse(server.app.state.store.active_owners)
 
     def test_simultaneous_private_streams_still_return_their_own_audio(self):
         with self.owner.websocket_connect("/api/live") as first, \

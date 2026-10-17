@@ -17,6 +17,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from backend.security import SecurityHeaders
 from backend.storage import PRIVATE_HEADERS
+from backend.worker_security import PYTHON_FLAGS, worker_environment
 from .model import MODEL_RATE, verify_assets
 from .worker import MAX_SECONDS, PROCESS_SECONDS
 
@@ -59,11 +60,11 @@ def run_worker(payload):
     with tempfile.TemporaryDirectory(prefix="noise-control-separation-") as directory:
         root = Path(directory)
         (root / "input.wav").write_bytes(payload)
-        environment = {**os.environ, "OMP_NUM_THREADS": "2", "OPENBLAS_NUM_THREADS": "2",
-                       "HF_HUB_OFFLINE": "1", "HF_HUB_DISABLE_TELEMETRY": "1"}
+        environment = worker_environment(root, threads=2)
+        environment["SEPARATION_DEVICE"] = os.environ.get("SEPARATION_DEVICE", "cpu")
         options = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
-        completed = subprocess.run([sys.executable, "-m", "separation_service.worker", directory, str(MODEL_DIRECTORY)],
-                                   cwd=ROOT, env=environment, stdin=subprocess.DEVNULL,
+        completed = subprocess.run([sys.executable, *PYTHON_FLAGS, "-m", "separation_service.worker", directory, str(MODEL_DIRECTORY)],
+                                   cwd=ROOT, env=environment, stdin=subprocess.DEVNULL, close_fds=True,
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                    timeout=PROCESS_SECONDS, **options)
         target = root / "sources.wav"

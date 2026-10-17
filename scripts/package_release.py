@@ -11,6 +11,7 @@ PATTERNS = ("backend/*.py", "frontend/*.html", "frontend/*.css", "frontend/*.js"
             ".github/workflows/*.yml", "separation_service/*.py", "separation_service/*.txt",
             "separation_service/*.lock")
 FILES = ("README.md",
+         ".github/dependabot.yml",
          "requirements.txt", "requirements.lock", "requirements-dev.txt", "render.yaml",
          "runtime.txt", ".python-version", ".gitignore", ".gitattributes", "Procfile", "start_local.cmd",
          "render-separation.yaml",

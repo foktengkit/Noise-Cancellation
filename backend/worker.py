@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 
 from .denoise import AudioError, MAX_AUDIO_SECONDS, MAX_CHANNELS, MAX_SAMPLE_RATE
+from .worker_security import PYTHON_FLAGS, worker_environment
 
 
 PROCESS_SECONDS = 45
@@ -18,13 +19,14 @@ def process_file(payload, filename, content_type, strength, hum_filter="off", en
     with tempfile.TemporaryDirectory(prefix="noise-lift-") as directory:
         root = Path(directory)
         (root / "input.audio").write_bytes(payload)
-        environment = {**os.environ, "OMP_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1"}
+        environment = worker_environment(root)
         options = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
         try:
             result = subprocess.run(
-                [sys.executable, "-m", "backend.worker", str(root), filename or "",
+                [sys.executable, *PYTHON_FLAGS, "-m", "backend.worker", str(root), filename or "",
                  content_type or "", str(strength), hum_filter, engine], cwd=Path(__file__).resolve().parent.parent,
-                env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                env=environment, stdin=subprocess.DEVNULL, close_fds=True,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 timeout=PROCESS_SECONDS, **options)
         except subprocess.TimeoutExpired as exc:
             raise TimeoutError("Audio processing timed out.") from exc
@@ -71,4 +73,5 @@ def main(directory, filename, content_type, strength, hum_filter="off", engine="
 
 
 if __name__ == "__main__":
+    os.umask(0o077)
     main(*sys.argv[1:])
