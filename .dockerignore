@@ -17,3 +17,7 @@ dist
 /PROJECT_REVIEW*.md
 /DENOISING_QUALITY*.md
 /QUALITY_IMPROVEMENTS*.md
+
+# Operational instructions stay outside build contexts.
+/DEPLOYMENT*.md
+/SEPARATION_DEPLOYMENT*.md

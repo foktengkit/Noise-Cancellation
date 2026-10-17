@@ -28,7 +28,7 @@ def available_port(start):
 def main():
     ml_python = ROOT / (".venv-separation/Scripts/python.exe" if os.name == "nt" else ".venv-separation/bin/python")
     if not ml_python.is_file():
-        raise RuntimeError("Install the optional environment first; see SEPARATION_DEPLOYMENT.md.")
+        raise RuntimeError("The optional .venv-separation environment is missing.")
     verify_assets(ROOT / ".tools" / "separation-model")
     web_port, ml_port = available_port(8002), available_port(8101)
     env = {**os.environ, "SEPARATION_API_KEY": secrets.token_urlsafe(32), "SEPARATION_ALLOW_HTTP": "1",

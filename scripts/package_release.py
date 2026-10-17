@@ -13,7 +13,7 @@ PATTERNS = ("backend/*.py", "frontend/*.html", "frontend/*.css", "frontend/*.js"
 FILES = ("README.md",
          "requirements.txt", "requirements.lock", "requirements-dev.txt", "render.yaml",
          "runtime.txt", ".python-version", ".gitignore", ".gitattributes", "Procfile", "start_local.cmd",
-         "SEPARATION_DEPLOYMENT.md", "render-separation.yaml",
+         "render-separation.yaml",
          ".dockerignore", "separation_service/Dockerfile",
          "start_separation_local.cmd",
          "frontend/vendor/README.md", "frontend/vendor/LUCIDE-LICENSE")

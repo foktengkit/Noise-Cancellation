@@ -22,3 +22,7 @@ test-artifacts/
 /PROJECT_REVIEW*.md
 /DENOISING_QUALITY*.md
 /QUALITY_IMPROVEMENTS*.md
+
+# Operational instructions stay local.
+/DEPLOYMENT*.md
+/SEPARATION_DEPLOYMENT*.md

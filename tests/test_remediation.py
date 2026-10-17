@@ -169,7 +169,9 @@ class DeploymentTests(unittest.TestCase):
                          "AUDIT_FIXES_2026-10-17.md", "PROJECT_REVIEW_2026-10-17.md",
                          "SECURITY_REVIEW_2099-01-01.md", "PRIVACY_REVIEW_2099-01-01.md",
                          "DENOISING_QUALITY.md", "QUALITY_IMPROVEMENTS_2026-10-17.md",
-                         "DENOISING_QUALITY_2099-01-01.md", "QUALITY_IMPROVEMENTS_2099-01-01.md")
+                         "DENOISING_QUALITY_2099-01-01.md", "QUALITY_IMPROVEMENTS_2099-01-01.md",
+                         "SEPARATION_DEPLOYMENT.md", "SEPARATION_DEPLOYMENT_2099-01-01.md",
+                         "DEPLOYMENT_NOTES.md")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for name in (*release.FILES, *local_reports, ".github/workflows/tests.yml", "media/private.sqlite3", "media/private.wav", ".env"):
@@ -188,13 +190,27 @@ class DeploymentTests(unittest.TestCase):
                     self.assertNotIn(name, names)
                     self.assertTrue((root / name).is_file())
 
-    def test_internal_review_reports_are_ignored_by_git_and_docker(self):
+    def test_local_only_documents_are_ignored_by_git_and_docker(self):
         for filename in (".gitignore", ".dockerignore"):
             patterns = (ROOT / filename).read_text(encoding="utf-8").splitlines()
             for prefix in ("PRIVACY_REVIEW", "SECURITY_FIXES", "SECURITY_REVIEW", "AUDIT_FIXES",
-                           "PROJECT_REVIEW", "DENOISING_QUALITY", "QUALITY_IMPROVEMENTS"):
+                           "PROJECT_REVIEW", "DENOISING_QUALITY", "QUALITY_IMPROVEMENTS",
+                           "DEPLOYMENT", "SEPARATION_DEPLOYMENT"):
                 with self.subTest(filename=filename, prefix=prefix):
                     self.assertIn("/" + prefix + "*.md", patterns)
+
+    def test_public_markdown_has_no_hosting_or_deployment_instructions(self):
+        paths = {ROOT / name for name in release.FILES if name.endswith(".md")}
+        for pattern in release.PATTERNS:
+            paths.update(path for path in ROOT.glob(pattern) if path.suffix == ".md" and path.is_file())
+        self.assertTrue(paths)
+        forbidden = (r"(?i)\b(?:render|deploy(?:ment|ing|ed)?|blueprint)\b|\u90e8\u7f72|"
+                     r"git\s+push|docker\s+(?:build|run|compose)|uvicorn|--host\s+0\.0\.0\.0")
+        for path in sorted(paths):
+            with self.subTest(path=path.relative_to(ROOT).as_posix()):
+                self.assertNotRegex(path.read_text(encoding="utf-8"), forbidden)
+        notice = (ROOT / "backend/models/README.md").read_text(encoding="utf-8")
+        self.assertIn("https://github.com/GregorR/rnnoise-models", notice)
 
 
 if __name__ == "__main__":
