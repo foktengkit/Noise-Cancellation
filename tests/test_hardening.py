@@ -38,12 +38,20 @@ class SessionLifecycleTests(unittest.TestCase):
         with closing(self.store.connect()) as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0], 1)
 
-    def test_recent_activity_refreshes_idle_time_but_not_absolute_expiry(self):
+    def test_empty_session_polling_does_not_extend_its_admission_lease(self):
         cookie = self.store.new_session()
         owner = self.store.owner(cookie)
-        for unused in range(2):
-            self.now += SESSION_IDLE_SECONDS - 1
-            self.assertEqual(self.store.owner(cookie), owner)
+        self.now += SESSION_IDLE_SECONDS - 1
+        self.assertEqual(self.store.owner(cookie), owner)
+        self.now += 2
+        self.assertIsNone(self.store.owner(cookie))
+
+    def test_real_activity_does_not_extend_absolute_expiry(self):
+        cookie = self.store.new_session()
+        owner = self.store.owner(cookie)
+        self.store.save(owner, self.wav, self.wav, {})
+        self.now += SESSION_IDLE_SECONDS - 1
+        self.assertEqual(self.store.owner(cookie), owner)
         with closing(self.store.connect()) as db, db:
             self.assertLess(db.execute("SELECT expires FROM sessions").fetchone()[0], self.now + SESSION_SECONDS)
             db.execute("UPDATE sessions SET expires=?", (self.now + 1,))

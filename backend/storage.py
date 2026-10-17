@@ -78,7 +78,9 @@ class MediaStore:
                 "FROM sessions WHERE owner=? AND expires>?", (now, owner, now)).fetchone()
             if row and (row["last_seen"] > now - SESSION_IDLE_SECONDS
                         or row["has_recording"] or owner in self.active_owners):
-                db.execute("UPDATE sessions SET last_seen=? WHERE owner=?", (now, owner))
+                # Empty-session polling must not renew the short admission lease.
+                if row["has_recording"] or owner in self.active_owners:
+                    db.execute("UPDATE sessions SET last_seen=? WHERE owner=?", (now, owner))
                 return row["owner"]
         return None
 
