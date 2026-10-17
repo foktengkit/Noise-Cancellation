@@ -10,7 +10,7 @@ import sqlite3
 import tempfile
 import time
 from collections import deque
-from contextlib import asynccontextmanager, suppress
+from contextlib import ExitStack, asynccontextmanager, suppress
 from pathlib import Path
 
 import numpy as np
@@ -26,6 +26,7 @@ from starlette.requests import ClientDisconnect
 from .admission import AdmissionRejected, FileAdmission
 from .denoise import (DEFAULT_STRENGTH, HUM_FILTERS, MAX_AUDIO_SECONDS, MAX_SAMPLE_RATE,
                       AudioError, StreamingNoiseReducer, validate_hum_filter, write_wav_bytes)
+from .recording import WavSpool
 from .security import RateLimits, SecurityHeaders, same_origin
 from . import separation
 from .speech import verify_model
@@ -34,7 +35,7 @@ from .worker import process_file
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-APP_VERSION = "0.5.1"
+APP_VERSION = "0.5.2"
 FRONTEND_DIR = BASE_DIR / "frontend"
 MEDIA_DIR = Path(os.environ.get("MEDIA_DIR", str(BASE_DIR / "media")))
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -346,10 +347,11 @@ def read_control(text):
 
 
 def save_live(owner, original, cleaned, sample_rate, strength, hum_filter="off"):
-    return app.state.store.save(owner, write_wav_bytes(original, sample_rate),
-                                write_wav_bytes(cleaned, sample_rate), {
+    if original.frames != cleaned.frames:
+        raise AudioError("The speech filter returned incomplete audio.")
+    return app.state.store.save(owner, original.read_wav(), cleaned.read_wav(), {
         "sampleRate": sample_rate, "channels": 1,
-        "durationSeconds": round(original.size / sample_rate, 2),
+        "durationSeconds": round(original.frames / sample_rate, 2),
         "strength": strength, "inputFormat": "microphone", "engine": "rnnoise", "humFilter": hum_filter})
 
 
@@ -379,6 +381,7 @@ async def live_audio(websocket: WebSocket):
     app.state.live_owners.add(owner)
     app.state.store.pin(owner)
     acquired = False
+    recordings = ExitStack()
     deadline = time.monotonic() + MAX_AUDIO_SECONDS + LIVE_GRACE_SECONDS
     try:
         try:
@@ -400,7 +403,9 @@ async def live_audio(websocket: WebSocket):
         strength = validate_strength(start.get("strength", DEFAULT_STRENGTH))
         hum_filter = validate_hum_filter(start.get("humFilter", "off"))
         reducer = StreamingNoiseReducer(sample_rate, hum_filter)
-        original_chunks, cleaned_chunks = [], []
+        original_recording = recordings.enter_context(WavSpool(sample_rate))
+        cleaned_recording = recordings.enter_context(WavSpool(sample_rate))
+        chunk_count = 0
         total_samples = 0
         last_audio = time.monotonic()
         messages = deque()
@@ -424,7 +429,7 @@ async def live_audio(websocket: WebSocket):
             if payload is not None:
                 if not payload or len(payload) % 4 or len(payload) > sample_rate * 4 // 2:
                     raise AudioError("Expected at most half a second of float32 mono audio.")
-                if len(original_chunks) >= MAX_LIVE_CHUNKS:
+                if chunk_count >= MAX_LIVE_CHUNKS:
                     raise AudioError("Too many microphone chunks.")
                 samples = np.frombuffer(payload, dtype="<f4").copy()
                 if not np.all(np.isfinite(samples)) or np.max(np.abs(samples)) > 1.01:
@@ -434,23 +439,24 @@ async def live_audio(websocket: WebSocket):
                 cleaned = await processing_thread(reducer.process, samples, strength)
                 total_samples += samples.size
                 last_audio = time.monotonic()
-                original_chunks.append(samples)
-                cleaned_chunks.append(cleaned.copy())
+                chunk_count += 1
+                await processing_thread(original_recording.write, samples)
+                await processing_thread(cleaned_recording.write, cleaned)
                 await send_live(websocket, "send_bytes", cleaned.astype("<f4").tobytes(), deadline)
             else:
                 control = read_control(message.get("text", ""))
                 if control.get("type") == "strength":
                     strength = validate_strength(control.get("value"))
                 elif control.get("type") == "stop":
-                    if not original_chunks:
+                    if not chunk_count:
                         raise AudioError("No microphone audio was received.")
                     tail = await processing_thread(reducer.finish)
                     if tail.size:
-                        cleaned_chunks.append(tail)
+                        await processing_thread(cleaned_recording.write, tail)
                         await send_live(websocket, "send_bytes", tail.astype("<f4").tobytes(), deadline)
                     result = await processing_thread(
-                        save_live, owner, np.concatenate(original_chunks),
-                        np.concatenate(cleaned_chunks), sample_rate, strength, hum_filter)
+                        save_live, owner, original_recording, cleaned_recording,
+                        sample_rate, strength, hum_filter)
                     await send_live(websocket, "send_json", {"type": "complete", **result}, deadline)
                     await asyncio.wait_for(websocket.close(code=1000), timeout=LIVE_SEND_SECONDS)
                     return
@@ -469,10 +475,13 @@ async def live_audio(websocket: WebSocket):
                 await websocket.send_json({"type": "error", "detail": "Unable to save the recording."})
                 await websocket.close(code=1011)
     finally:
-        app.state.store.unpin(owner)
-        app.state.live_owners.discard(owner)
-        if acquired:
-            app.state.live_slots.release()
+        try:
+            recordings.close()
+        finally:
+            app.state.store.unpin(owner)
+            app.state.live_owners.discard(owner)
+            if acquired:
+                app.state.live_slots.release()
 
 
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

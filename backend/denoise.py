@@ -149,16 +149,20 @@ def write_wav_bytes(samples: np.ndarray, sample_rate: int) -> bytes:
     if samples.ndim == 1:
         samples = samples[:, None]
 
-    clipped = np.clip(samples, -1.0, 1.0)
-    pcm = (clipped * 32767.0).astype("<i2").tobytes()
-
     output = io.BytesIO()
     with wave.open(output, "wb") as wav:
         wav.setnchannels(samples.shape[1])
         wav.setsampwidth(2)
         wav.setframerate(sample_rate)
-        wav.writeframes(pcm)
+        write_wav_frames(wav, samples)
     return output.getvalue()
+
+
+def write_wav_frames(output, samples: np.ndarray) -> None:
+    """Quantize in bounded blocks instead of copying a whole recording."""
+    for start in range(0, len(samples), 16384):
+        block = np.clip(samples[start:start + 16384], -1.0, 1.0)
+        output.writeframesraw((block * 32767.0).astype("<i2").tobytes())
 
 
 def reduce_noise(samples: np.ndarray, sample_rate: int, strength: float = DEFAULT_STRENGTH,
@@ -178,10 +182,17 @@ def reduce_noise(samples: np.ndarray, sample_rate: int, strength: float = DEFAUL
     if strength == 0:
         return samples.copy()
     reducer = SpeechDenoiser(sample_rate, samples.shape[1], hum_filter)
-    chunks = [reducer.process(samples[start:start + sample_rate * 2], strength)
-              for start in range(0, len(samples), sample_rate * 2)]
-    chunks.append(reducer.finish())
-    return np.concatenate(chunks)
+    output = np.empty_like(samples)
+    written = 0
+    for start in range(0, len(samples), sample_rate * 2):
+        cleaned = reducer.process(samples[start:start + sample_rate * 2], strength)
+        output[written:written + len(cleaned)] = cleaned
+        written += len(cleaned)
+    tail = reducer.finish()
+    output[written:written + len(tail)] = tail
+    if written + len(tail) != len(samples):
+        raise AudioError("The speech filter returned incomplete audio.")
+    return output
 
 
 def reduce_stationary_noise(samples: np.ndarray, sample_rate: int, strength: float = 0.82) -> np.ndarray:
