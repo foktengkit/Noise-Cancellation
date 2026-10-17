@@ -8,3 +8,10 @@ dist
 *.log
 **/__pycache__
 **/*.pyc
+
+# Internal review reports stay outside build contexts.
+/PRIVACY_REVIEW*.md
+/SECURITY_FIXES*.md
+/SECURITY_REVIEW*.md
+/AUDIT_FIXES*.md
+/PROJECT_REVIEW*.md

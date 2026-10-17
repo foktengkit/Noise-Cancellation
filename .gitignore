@@ -13,3 +13,10 @@ media/
 .DS_Store
 dist/
 test-artifacts/
+
+# Internal review reports stay local.
+/PRIVACY_REVIEW*.md
+/SECURITY_FIXES*.md
+/SECURITY_REVIEW*.md
+/AUDIT_FIXES*.md
+/PROJECT_REVIEW*.md

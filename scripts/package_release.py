@@ -10,8 +10,7 @@ PATTERNS = ("backend/*.py", "frontend/*.html", "frontend/*.css", "frontend/*.js"
             "backend/models/*.rnnn", "backend/models/*.md", "scripts/*.ps1", "frontend/assets/*.md",
             ".github/workflows/*.yml", "separation_service/*.py", "separation_service/*.txt",
             "separation_service/*.lock")
-FILES = ("README.md", "SECURITY_REVIEW.md", "PRIVACY_REVIEW.md", "SECURITY_FIXES.md", "DENOISING_QUALITY.md",
-         "AUDIT_FIXES_2026-10-17.md", "PROJECT_REVIEW_2026-10-17.md",
+FILES = ("README.md", "DENOISING_QUALITY.md",
          "requirements.txt", "requirements.lock", "requirements-dev.txt", "render.yaml",
          "runtime.txt", ".python-version", ".gitignore", ".gitattributes", "Procfile", "start_local.cmd",
          "SEPARATION_DEPLOYMENT.md", "QUALITY_IMPROVEMENTS_2026-10-17.md", "render-separation.yaml",

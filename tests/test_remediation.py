@@ -165,9 +165,12 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn("python -m pip check", commands)
 
     def test_release_contains_ci_but_not_private_state(self):
+        local_reports = ("PRIVACY_REVIEW.md", "SECURITY_FIXES.md", "SECURITY_REVIEW.md",
+                         "AUDIT_FIXES_2026-10-17.md", "PROJECT_REVIEW_2026-10-17.md",
+                         "SECURITY_REVIEW_2099-01-01.md", "PRIVACY_REVIEW_2099-01-01.md")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for name in (*release.FILES, ".github/workflows/tests.yml", "media/private.sqlite3", "media/private.wav", ".env"):
+            for name in (*release.FILES, *local_reports, ".github/workflows/tests.yml", "media/private.sqlite3", "media/private.wav", ".env"):
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("fixture", encoding="utf-8")
@@ -179,6 +182,16 @@ class DeploymentTests(unittest.TestCase):
                 self.assertIn(".gitattributes", names)
                 self.assertNotIn(".env", names)
                 self.assertFalse(any(name.startswith("media/") for name in names))
+                for name in local_reports:
+                    self.assertNotIn(name, names)
+                    self.assertTrue((root / name).is_file())
+
+    def test_internal_review_reports_are_ignored_by_git_and_docker(self):
+        for filename in (".gitignore", ".dockerignore"):
+            patterns = (ROOT / filename).read_text(encoding="utf-8").splitlines()
+            for prefix in ("PRIVACY_REVIEW", "SECURITY_FIXES", "SECURITY_REVIEW", "AUDIT_FIXES", "PROJECT_REVIEW"):
+                with self.subTest(filename=filename, prefix=prefix):
+                    self.assertIn("/" + prefix + "*.md", patterns)
 
 
 if __name__ == "__main__":
