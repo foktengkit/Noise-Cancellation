@@ -7,7 +7,7 @@ from unittest.mock import patch
 import numpy as np
 
 from backend.denoise import AudioError, MAX_AUDIO_SECONDS, StreamingNoiseReducer, reduce_noise
-from backend.speech import MODEL_PATH, MODEL_SHA256, SpeechDenoiser, verify_model
+from backend.speech import MODEL_PATH, MODEL_SHA256, STRENGTH_EXPONENT, SpeechDenoiser, verify_model
 
 
 class SpeechTests(unittest.TestCase):
@@ -90,6 +90,41 @@ class SpeechTests(unittest.TestCase):
         expected_wet = reduce_noise(x, 16000, 1)[:, 0]
         np.testing.assert_array_equal(output[:4000], x[:4000])
         np.testing.assert_allclose(output[4000:], expected_wet[4000:], atol=1e-6)
+
+    def test_intermediate_strength_preserves_aligned_dry_detail(self):
+        source = np.random.default_rng(42).normal(0, .04, (16017, 2)).astype(np.float32)
+        wet = reduce_noise(source, 16000, 1)
+        previous = 0.
+        for strength in (.25, .5, .85):
+            with self.subTest(strength=strength):
+                amount = strength ** STRENGTH_EXPONENT
+                self.assertLess(previous, amount)
+                self.assertLess(amount, strength)
+                expected = np.clip(source*(1-amount) + wet*amount, -1, 1)
+                np.testing.assert_allclose(reduce_noise(source, 16000, strength), expected, atol=1e-6)
+                previous = amount
+
+    def test_fractional_strength_stream_matches_file_for_irregular_chunks(self):
+        source = np.random.default_rng(43).normal(0, .03, 32017).astype(np.float32)
+        for size in (127, 4000):
+            with self.subTest(size=size):
+                reducer = StreamingNoiseReducer(16000)
+                output = [reducer.process(source[start:start+size], .85)
+                          for start in range(0, len(source), size)]
+                output.append(reducer.finish())
+                np.testing.assert_allclose(np.concatenate(output),
+                                           reduce_noise(source, 16000, .85)[:, 0], atol=1e-6)
+
+    def test_fractional_strength_changes_follow_input_alignment(self):
+        source = np.random.default_rng(44).normal(0, .04, 16017).astype(np.float32)
+        reducer = StreamingNoiseReducer(16000)
+        output = np.concatenate([reducer.process(source[:7001], .25),
+                                 reducer.process(source[7001:], .85), reducer.finish()])
+        wet = reduce_noise(source, 16000, 1)[:, 0]
+        for start, end, strength in ((0, 7001, .25), (7001, len(source), .85)):
+            amount = strength ** STRENGTH_EXPONENT
+            expected = source[start:end]*(1-amount) + wet[start:end]*amount
+            np.testing.assert_allclose(output[start:end], expected, atol=1e-6)
 
     def test_invalid_samples_strength_and_duration_are_bounded(self):
         for strength in (float("nan"), float("inf"), -1, 2):

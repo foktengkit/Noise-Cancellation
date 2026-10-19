@@ -35,7 +35,7 @@ from .worker import process_file
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-APP_VERSION = "0.5.3"
+APP_VERSION = "0.5.4"
 FRONTEND_DIR = BASE_DIR / "frontend"
 MEDIA_DIR = Path(os.environ.get("MEDIA_DIR", str(BASE_DIR / "media")))
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024

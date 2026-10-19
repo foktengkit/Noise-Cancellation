@@ -13,7 +13,8 @@ from .denoise import AudioError, _validate_audio_size, validate_hum_filter
 
 
 MODEL_PATH = Path(__file__).resolve().parent / "models" / "voice.rnnn"
-MODEL_SHA256 = "ae3f7411e1e6a884f839a4a145c394408398f09854dbc1216ee02faafc98a17b"
+MODEL_SHA256 = "70bb6685eb0c2a1d18e2918dca3fbfbd39317010b1802eb1b6ea73a92f3fdec0"
+STRENGTH_EXPONENT = 1.75
 
 
 @lru_cache(maxsize=1)
@@ -72,6 +73,8 @@ class SpeechDenoiser:
         strength = float(strength)
         if not np.isfinite(strength) or not 0 <= strength <= 1 or not np.all(np.isfinite(samples)):
             raise AudioError("Audio samples and strength must be finite and within range.")
+        # Preserve speech detail at intermediate settings; endpoints stay exact.
+        strength = strength ** STRENGTH_EXPONENT
         _validate_audio_size(self.received + len(samples), self.rate, self.channels)
         self.received += len(samples)
         self.pending.append((samples.copy(), strength))
