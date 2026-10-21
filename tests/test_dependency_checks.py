@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 
 import yaml
+from packaging.version import Version
 
 from scripts import check_dependencies as scanner
 
@@ -32,6 +33,13 @@ class DependencyCheckTests(unittest.TestCase):
                 path.write_text("package>=1\n", encoding="utf-8")
             with self.assertRaises(ValueError):
                 scanner.inventory(root)
+
+    def test_certifi_does_not_regress_to_compromised_ca_bundle(self):
+        versions = [row["version"] for row in scanner.inventory() if row["name"] == "certifi"]
+        self.assertTrue(versions)
+        for version in versions:
+            with self.subTest(version=version):
+                self.assertGreaterEqual(Version(version), Version("2026.10.19"))
 
     def query(self, response):
         packages = [{"name":"example", "version":"1.0"}]
