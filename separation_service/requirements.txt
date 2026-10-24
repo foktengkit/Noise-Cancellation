@@ -1,6 +1,7 @@
 -r ../requirements.txt
 certifi==2026.10.19
+filelock==4.2.1
 torch==2.14.1
 torchaudio==2.11.0
 speechbrain==1.1.2
-setuptools==83.0.0
+setuptools==84.2.1

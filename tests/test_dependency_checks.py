@@ -41,6 +41,16 @@ class DependencyCheckTests(unittest.TestCase):
             with self.subTest(version=version):
                 self.assertGreaterEqual(Version(version), Version("2026.10.19"))
 
+    def test_optional_dependencies_do_not_regress_to_known_vulnerable_versions(self):
+        minimums = {"filelock": "4.2.1", "setuptools": "84.1.0"}
+        packages = scanner.inventory()
+        for name, minimum in minimums.items():
+            versions = [row["version"] for row in packages if row["name"] == name]
+            self.assertTrue(versions, name)
+            for version in versions:
+                with self.subTest(package=name, version=version):
+                    self.assertGreaterEqual(Version(version), Version(minimum))
+
     def query(self, response):
         packages = [{"name":"example", "version":"1.0"}]
         with patch.object(scanner.urllib.request, "urlopen", return_value=io.BytesIO(json.dumps(response).encode())) as call:
