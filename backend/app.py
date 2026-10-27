@@ -31,6 +31,7 @@ from .security import RateLimits, SecurityHeaders, same_origin
 from . import separation
 from .speech import verify_model
 from .storage import MediaStore, PRIVATE_HEADERS, SESSION_COOKIE, SESSION_SECONDS, StorageFull
+from .tls_probe import run_startup_tls_check
 from .worker import process_file
 
 
@@ -78,12 +79,18 @@ async def lifespan(application):
     application.state.live_owners = set()
     application.state.rates = RateLimits()
     task = asyncio.create_task(media_cleanup_loop())
+    tls_task = (asyncio.create_task(run_in_threadpool(run_startup_tls_check))
+                if os.environ.get("TLS_STARTUP_CHECK") == "1" else None)
     try:
         yield
     finally:
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task
+        if tls_task is not None:
+            tls_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await tls_task
 
 
 app = FastAPI(title="Noise Control", version=APP_VERSION, lifespan=lifespan,
