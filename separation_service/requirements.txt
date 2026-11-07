@@ -2,6 +2,6 @@
 certifi==2026.10.19
 filelock==4.2.1
 torch==2.14.1
-torchaudio==2.11.0
+torchaudio==2.11.1
 speechbrain==1.1.2
 setuptools==84.2.1
