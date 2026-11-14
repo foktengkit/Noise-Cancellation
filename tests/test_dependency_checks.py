@@ -51,6 +51,13 @@ class DependencyCheckTests(unittest.TestCase):
                 with self.subTest(package=name, version=version):
                     self.assertGreaterEqual(Version(version), Version(minimum))
 
+    def test_trace_context_dependency_does_not_regress_to_vulnerable_versions(self):
+        versions = [row["version"] for row in scanner.inventory() if row["name"] == "opentelemetry-api"]
+        self.assertTrue(versions)
+        for version in versions:
+            with self.subTest(version=version):
+                self.assertGreaterEqual(Version(version), Version("1.45.2"))
+
     def query(self, response):
         packages = [{"name":"example", "version":"1.0"}]
         with patch.object(scanner.urllib.request, "urlopen", return_value=io.BytesIO(json.dumps(response).encode())) as call:
